@@ -1,0 +1,26 @@
+# ============================================================================
+# DataForge 系统库 MySQL 自定义配置
+# 挂载路径：/etc/mysql/conf.d/custom.cnf
+# 依据文档：docs/popsicle_架构设计readme.md 第 11.4 节（慢查询监控）
+#           第 12.3 节（连接数与超时配置建议）
+# ============================================================================
+
+[mysqld]
+# ── 慢查询监控（11.4 节）：超过 500ms 的 SQL 记录到 slow.log ──
+slow_query_log = ON
+long_query_time = 0.5
+slow_query_log_file = /var/log/mysql/slow.log
+
+# ── InnoDB 缓冲池（生产环境建议 >= 2G，需与容器 memory limit 匹配）──
+innodb_buffer_pool_size = 2G
+
+# ── 连接数上限（见第 12 章连接数规划：业务约 74 + 管理连接 + 缓冲余量）──
+max_connections = 500
+
+# ── 空闲连接超时（秒），避免连接池持有已被服务端断开的连接 ──
+wait_timeout = 600
+interactive_timeout = 600
+
+# ── 服务端字符集 ──
+character-set-server = utf8mb4
+collation-server = utf8mb4_0900_ai_ci

@@ -1,0 +1,41 @@
+# DataForge 造数工厂 — 后端依赖（固定版本）
+# 对应架构文档 2.1 技术选型总表
+
+# Web 框架
+fastapi==0.111.0
+uvicorn[standard]==0.30.3
+python-multipart==0.0.9
+
+# ORM 与数据库驱动
+SQLAlchemy[asyncio]==2.0.31
+aiomysql==0.2.0
+PyMySQL==1.1.1
+
+# 数据校验与配置管理
+# 注意：nacos-sdk-python 2.0.0 要求 pydantic>=2.10.4，此处对齐
+pydantic==2.10.4
+pydantic-settings==2.3.4
+
+# 异步任务与缓存
+celery==5.4.0
+redis==5.0.7
+
+# 认证与安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+# 注意：passlib 1.7.4 与 bcrypt>=4.1 不兼容（__about__ 属性被移除），必须锁定 <4.1
+bcrypt==4.0.1
+cryptography==42.0.8
+
+# HTTP 客户端（心跳检测等）
+httpx==0.27.0
+
+# 结构化日志
+structlog==24.2.0
+
+# 数据库迁移
+alembic==1.13.2
+
+# Nacos 配置中心 / 服务注册（官方 SDK）
+nacos-sdk-python==2.0.0
+PyYAML==6.0.1

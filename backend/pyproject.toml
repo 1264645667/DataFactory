@@ -1,0 +1,42 @@
+# DataForge 造数工厂 — 后端工程配置（ruff + mypy）
+
+[project]
+name = "dataforge-backend"
+version = "1.0.0"
+description = "DataForge 造数工厂后端服务"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["app"]
+
+[tool.ruff.lint]
+# E: pycodestyle 错误  W: pycodestyle 警告  F: pyflakes
+# I: import 排序  N: 命名规范  UP: 语法升级  B: bugbear  C4: 推导式
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4"]
+ignore = [
+    "E501",   # 行宽交给 formatter 处理
+    "B008",   # FastAPI 依赖注入大量使用函数调用作为默认值
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "."
+packages = ["app"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = "(alembic/versions/|tests/)"
+
+[[tool.mypy.overrides]]
+module = ["nacos.*", "passlib.*", "aiomysql.*"]
+ignore_missing_imports = true

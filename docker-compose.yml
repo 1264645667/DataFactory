@@ -1,0 +1,122 @@
+# ============================================================================
+# DataForge 造数工厂 — Docker Compose 编排（生产/联调环境）
+#
+# 说明：
+#   1. MySQL / Redis / Nacos 均使用公司外部实例（见 .env 中 EXTERNAL_* 变量），
+#      本编排不再包含 mysql / nacos 容器，也不再使用项目内置 sql/init.sql。
+#   2. 系统库 data_factory 需由 DBA 提前建好，账号需具备 DDL/DML 权限。
+#   3. Redis 使用外部 172.28.31.239:6379 db=3，密码通过 REDIS_URL 注入。
+#   4. Nacos 默认 localhost:8848（本地调试）；线上通过 NACOS_SERVER 指向真实地址。
+#   5. Compose v2 已废弃 version 字段。
+# ============================================================================
+
+# ── 公共环境变量锚点（api / worker-high / worker-normal / beat 共用）────────
+x-api-env: &api-env
+  # 系统库连接串（SQLAlchemy + aiomysql 异步驱动；密码含特殊字符需 URL 编码）
+  DATABASE_URL: ${DATABASE_URL}
+  REDIS_URL: ${REDIS_URL}
+  # Nacos 配置中心 / 注册中心
+  NACOS_SERVER: ${NACOS_SERVER:-localhost:8848}
+  NACOS_NAMESPACE: ${NACOS_NAMESPACE:-}
+  NACOS_GROUP: ${NACOS_GROUP:-datafactory_group}
+  NACOS_DATA_ID: ${NACOS_DATA_ID:-popsicle_datafactory_config}
+  NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+  NACOS_PASSWORD: ${NACOS_PASSWORD:-nacos}
+  # 应用密钥
+  SECRET_KEY: ${SECRET_KEY}
+  AES_KEY: ${AES_KEY}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  TZ: Asia/Shanghai
+
+services:
+
+  # ── 应用服务 ────────────────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      replicas: 2               # 默认 2 副本，可 --scale api=N 扩容
+      resources:
+        limits:
+          memory: 1g
+
+  worker-high:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # 高优先级造数队列，8 线程并发
+    command: celery -A app.celery_app worker -Q high -c 8 --loglevel=info
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 2               # 造数压力大时可 --scale worker-high=N 扩容
+      resources:
+        limits:
+          memory: 2g
+
+  worker-normal:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # 普通 + 低优先级队列（数据源同步、通知等后台任务）
+    command: celery -A app.celery_app worker -Q normal,low -c 4 --loglevel=info
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # 使用 Celery 内置 Scheduler（定时任务静态声明），单实例运行
+    command: celery -A app.celery_app beat --loglevel=info
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    deploy:
+      replicas: 1               # Beat 必须单实例，禁止扩容
+      resources:
+        limits:
+          memory: 256m
+
+  # ── 前端 + 反向代理 ─────────────────────────────────────────────────────
+
+  nginx:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # - "443:443"     # 生产开启 HTTPS 时取消注释，并挂载证书目录
+    # volumes:
+    #   - ./ssl:/etc/nginx/ssl:ro   # HTTPS 证书（生产环境）
+    depends_on:
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128m

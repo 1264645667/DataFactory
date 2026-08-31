@@ -1,0 +1,232 @@
+/* ============================================================
+   DataForge 全局样式：玻璃态卡片 / 渐变边框 / 渐变按钮 / 猫咪动画
+   ============================================================ */
+
+:root {
+  --df-primary: #7c3aed;
+  --df-primary-hover: #8b5cf6;
+  --df-bg: #0d0d0d;
+  --df-card: #1a1a2e;
+  --df-border: rgba(124, 58, 237, 0.3);
+  --df-text: #e2e8f0;
+  --df-text-dim: #94a3b8;
+}
+
+html,
+body {
+  background: var(--df-bg);
+  color: var(--df-text);
+  font-family: 'Inter', 'PingFang SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* ---------- 玻璃态卡片 ---------- */
+.glass-card {
+  background: rgba(26, 26, 46, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- 渐变边框卡片 ---------- */
+.gradient-border-card {
+  position: relative;
+  background: var(--df-card);
+  border-radius: 12px;
+}
+.gradient-border-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.7), rgba(37, 99, 235, 0.5), rgba(124, 58, 237, 0.2));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ---------- 渐变按钮 ---------- */
+.gradient-btn {
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%) !important;
+  border: none !important;
+  color: #fff !important;
+  transition: box-shadow 0.25s ease, transform 0.15s ease;
+}
+.gradient-btn:not(:disabled):hover {
+  box-shadow: 0 0 18px rgba(124, 58, 237, 0.55), 0 0 40px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
+}
+.gradient-btn:disabled {
+  opacity: 0.6;
+}
+
+/* ---------- 指标卡片悬停上浮 ---------- */
+.metric-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.metric-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(124, 58, 237, 0.18);
+}
+
+/* ---------- 页面切换过渡 ---------- */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+}
+
+/* ---------- 登录成功全屏渐出 ---------- */
+.fullscreen-fade-enter-active,
+.fullscreen-fade-leave-active {
+  transition: opacity 0.5s ease;
+}
+.fullscreen-fade-enter-from,
+.fullscreen-fade-leave-to {
+  opacity: 0;
+}
+
+/* ---------- 输入框错误抖动 ---------- */
+@keyframes df-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.df-shake {
+  animation: df-shake 0.4s ease;
+}
+
+/* ---------- 猫咪呼吸动画 ---------- */
+@keyframes df-cat-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+.cat-breathe {
+  transform-origin: 60px 70px;
+  animation: df-cat-breathe 3s ease-in-out infinite;
+}
+
+/* ---------- 猫咪尾巴摆动 ---------- */
+@keyframes df-tail-wag {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(9deg); }
+}
+.cat-tail {
+  transform-origin: 85px 104px;
+  animation: df-tail-wag 2.2s ease-in-out infinite;
+}
+
+/* ---------- 睡觉 Zzz 漂浮 ---------- */
+@keyframes df-zzz {
+  0% { opacity: 0; transform: translate(0, 0); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: translate(8px, -14px); }
+}
+.cat-zzz {
+  animation: df-zzz 2.4s ease-in-out infinite;
+}
+
+/* ---------- 行走猫咪上下颠簸 ---------- */
+@keyframes df-cat-walk {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+.cat-walking {
+  animation: df-cat-walk 0.5s ease-in-out infinite;
+}
+
+/* ---------- 加载省略号逐点出现 ---------- */
+@keyframes df-dot {
+  0%, 60%, 100% { opacity: 0.2; }
+  30% { opacity: 1; }
+}
+.df-dot {
+  animation: df-dot 1.2s infinite;
+}
+.df-dot:nth-child(2) { animation-delay: 0.2s; }
+.df-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ---------- 铃铛抖动（新消息到达） ---------- */
+@keyframes df-bell-shake {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(14deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-6deg); }
+}
+.bell-shake {
+  animation: df-bell-shake 0.7s ease;
+}
+
+/* ---------- 新复制行高亮闪烁 ---------- */
+@keyframes df-row-flash {
+  0% { background: rgba(124, 58, 237, 0.35); }
+  100% { background: transparent; }
+}
+.row-flash {
+  animation: df-row-flash 1.6s ease;
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.35);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.6);
+}
+
+/* ---------- 骨架屏覆盖色调 ---------- */
+.n-skeleton {
+  --n-color: rgba(124, 58, 237, 0.1) !important;
+  --n-color-end: rgba(124, 58, 237, 0.2) !important;
+}
+
+/* ---------- Vue Flow 画布暗色适配 ---------- */
+.vue-flow {
+  background: #101018;
+}
+.vue-flow__node {
+  font-family: inherit;
+}
+.vue-flow__edge-path {
+  stroke: #7c3aed;
+  stroke-width: 1.6;
+}
+.vue-flow__edge.selected .vue-flow__edge-path {
+  stroke: #a78bfa;
+  stroke-width: 2.4;
+}
+.vue-flow__handle {
+  background: #7c3aed;
+  border: 2px solid #0d0d0d;
+  width: 10px;
+  height: 10px;
+}
+.vue-flow__controls {
+  box-shadow: none;
+}
+.vue-flow__controls-button {
+  background: #1a1a2e;
+  border-bottom: 1px solid rgba(124, 58, 237, 0.25);
+  color: #e2e8f0;
+}
+.vue-flow__controls-button:hover {
+  background: #23234a;
+}

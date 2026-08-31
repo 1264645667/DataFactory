@@ -1,0 +1,38 @@
+# ── 环境变量 / 密钥（禁止提交，模板见 .env.example）──
+.env
+.env.local
+.env.*.local
+
+# ── Python（后端）──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ── Node（前端）──
+node_modules/
+dist/
+dist-ssr/
+
+# ── IDE ──
+.idea/
+.vscode/
+*.iml
+
+# ── 日志与运行时文件 ──
+logs/
+*.log
+celerybeat-schedule*
+
+# ── SSL 证书（生产挂载，禁止提交私钥）──
+ssl/
+
+# ── 操作系统 ──
+.DS_Store
+Thumbs.db

@@ -1,0 +1,71 @@
+# ============================================================================
+# DataForge 造数工厂 — Nacos 统一业务配置
+#
+# 在 Nacos 控制台创建配置：
+#   Data ID:  popsicle_datafactory_config
+#   Group:    datafactory_group
+#   配置格式:  YAML
+#   命名空间:  public（或按实际环境填写 NACOS_NAMESPACE）
+#
+# 说明：所有参数均可热更新；修改后无需重启服务（约 1s 内生效）。
+# 注意：数据库连接串/Redis 密码等敏感信息建议仍通过环境变量注入，
+#       此处仅保留可安全热更新的业务参数。
+# ============================================================================
+
+app:
+  name: DataForge
+  version: "1.0.0"
+  debug: false
+  timezone: Asia/Shanghai
+
+# ── 日志 ───────────────────────────────────────────────────────────────────
+log:
+  level: INFO          # DEBUG / INFO / WARNING / ERROR
+  structured: true     # true=JSON 结构化日志，false=彩色可读格式
+
+# ── 数据库连接池（系统库）───────────────────────────────────────────────────
+database:
+  pool_size: 10
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 3600
+  echo: false          # 是否打印 SQL，生产环境必须 false
+
+# ── Celery 执行参数（热更新重点）────────────────────────────────────────────
+celery:
+  worker_high_concurrency: 8
+  worker_normal_concurrency: 4
+  task_soft_time_limit: 7200      # 单任务软超时（秒）
+  task_time_limit: 7800           # 单任务硬超时（秒）
+
+executor:
+  default_batch_size: 3000        # 默认批次大小（null=按目标量自动计算）
+  max_workers: 8                  # 造数并发线程数（千万级建议 16）
+  batch_max_retry: 3              # 单批次失败重试次数
+  fail_rate_threshold: 0.5        # 失败率超此值任务判失败
+  auto_split_threshold: 10000000  # 超此条数自动分片（条/表）
+  disable_unique_checks: false    # 临时关闭唯一索引检查（可提速 30~50%，有风险）
+  disable_fk_checks: false        # 临时关闭外键检查
+  iterate_parallel_rounds: false  # ITERATE_LIST 是否并发执行各轮
+
+# ── 数据源同步策略 ─────────────────────────────────────────────────────────
+datasync:
+  scheduled_hour: 2               # 每天凌晨 2 点定时同步
+  scheduled_minute: 0
+  heartbeat_interval: 30          # 心跳检测间隔（秒）
+  cache_ttl_tables: 43200         # 表列表缓存 TTL（秒，12h）
+  cache_ttl_columns: 43200        # 字段缓存 TTL（秒，12h）
+  sync_lock_ttl: 300              # 同步分布式锁 TTL（秒）
+
+# ── 消息通知清理策略（PRD 11.6）─────────────────────────────────────────────
+notification:
+  high_priority_ttl_days: 90      # 高优先级消息保留 90 天
+  mid_priority_ttl_days: 30       # 中优先级保留 30 天
+  low_priority_ttl_days: 14       # 普通保留 14 天
+  max_per_user: 500               # 每用户最多保留条数
+
+# ── 登录安全（PRD 9.3）──────────────────────────────────────────────────────
+security:
+  login_fail_max_times: 5         # 连续失败 5 次锁定
+  login_fail_lock_seconds: 600    # 锁定 10 分钟
+  jwt_expire_days: 7              # JWT 有效期 7 天
