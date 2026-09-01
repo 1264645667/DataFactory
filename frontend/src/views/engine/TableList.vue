@@ -99,14 +99,20 @@ const pageSize = ref(20)
 
 const dsOptions = computed(() => list.value.map((d) => ({ label: d.name, value: d.id })))
 
-// 连接状态灯
+// 连接状态灯：status=3 为同步中；其余看心跳 online（true 在线 / false 离线 / null 未检测）
 const statusText = computed(() => {
-  const s = current.value?.status
-  return { online: '在线', offline: '离线', syncing: '同步中' }[s ?? 'offline'] ?? '未知'
+  const d = current.value
+  if (!d) return '未知'
+  if (d.status === 3) return '同步中'
+  if (d.online === true) return '在线'
+  if (d.online === false) return '离线'
+  return '未检测'
 })
 const statusLightClass = computed(() => {
-  const s = current.value?.status
-  return { online: 'light-green', offline: 'light-red', syncing: 'light-yellow' }[s ?? 'offline'] ?? 'light-red'
+  const d = current.value
+  if (!d || d.online == null) return 'light-red'
+  if (d.status === 3) return 'light-yellow'
+  return d.online ? 'light-green' : 'light-red'
 })
 
 // 本地过滤 + 排序（PRD 4.3.2：搜索本地过滤无需请求后端）

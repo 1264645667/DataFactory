@@ -13,7 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PageParams, require_permission
+from app.api.deps import PageParams, require_permission, to_local_naive
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.errors import PARAM_INVALID, BizException
@@ -109,7 +109,7 @@ async def get_exec_records(
     data = await overview_service.get_exec_records(
         db, current_user=current_user,
         page=page_params.page, page_size=page_params.page_size,
-        start_time=start_time, end_time=end_time, status=status,
+        start_time=to_local_naive(start_time), end_time=to_local_naive(end_time), status=status,
         datasource_id=datasource_id, created_by=created_by,
         case_name=case_name, table_name=table_name,
     )

@@ -123,7 +123,7 @@ CREATE TABLE df_column_cache (
     is_primary_key   TINYINT      NOT NULL DEFAULT 0,
     is_unique        TINYINT      NOT NULL DEFAULT 0,
     column_default   VARCHAR(500) COMMENT '默认值',
-    char_max_length  INT          COMMENT 'varchar最大长度',
+    char_max_length  BIGINT       COMMENT 'varchar最大长度（longtext 可达 4294967295，超 INT 范围）',
     numeric_precision INT         COMMENT '数字精度',
     numeric_scale    INT          COMMENT '小数位数',
     ordinal_position INT          NOT NULL COMMENT '字段顺序',

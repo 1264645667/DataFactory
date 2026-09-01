@@ -68,7 +68,7 @@ class ColumnCache(Base):
     is_unique: Mapped[int] = mapped_column(TINYINT, nullable=False, default=0)
     column_default: Mapped[str | None] = mapped_column(String(500), comment="默认值")
     char_max_length: Mapped[int | None] = mapped_column(
-        Integer, comment="varchar最大长度"
+        BigInteger, comment="varchar最大长度（longtext 可达 42 亿，超 INT 范围，必须用 BIGINT）"
     )
     numeric_precision: Mapped[int | None] = mapped_column(Integer, comment="数字精度")
     numeric_scale: Mapped[int | None] = mapped_column(Integer, comment="小数位数")

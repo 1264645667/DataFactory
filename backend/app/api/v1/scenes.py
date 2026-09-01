@@ -19,7 +19,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PageParams, require_permission
+from app.api.deps import PageParams, require_permission, to_local_naive
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.response import ApiResponse, PageData
@@ -104,7 +104,7 @@ async def list_scenes(
         db, current_user=current_user,
         page=page_params.page, page_size=page_params.page_size,
         name=name, created_by=created_by, last_exec_status=last_exec_status,
-        start_time=start_time, end_time=end_time,
+        start_time=to_local_naive(start_time), end_time=to_local_naive(end_time),
     )
     return ApiResponse(data=data)
 

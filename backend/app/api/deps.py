@@ -40,6 +40,24 @@ bearer_scheme = HTTPBearer(auto_error=False)
 ADMIN_GROUP_TYPE = 99
 
 
+def to_local_naive(dt: datetime | None) -> datetime | None:
+    """将带时区的 datetime 转为本地时区的 naive datetime。
+
+    前端可能传 ISO 8601 带时区格式（如 new Date().toISOString() 的 UTC 时间），
+    而 MySQL DATETIME 存储的是本地时间（Asia/Shanghai）的 naive 值。
+    直接比较会产生 8 小时偏差导致查不到数据，此处统一转换。
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt
+    from zoneinfo import ZoneInfo
+
+    from app.config import settings
+
+    return dt.astimezone(ZoneInfo(settings.TZ)).replace(tzinfo=None)
+
+
 async def get_user_permissions(db: AsyncSession, user_id: int) -> list[str]:
     """实时查询用户权限编码列表（df_user_menu JOIN df_menu）。"""
     result = await db.execute(

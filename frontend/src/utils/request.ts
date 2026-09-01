@@ -10,6 +10,20 @@ import { emitAuthExpired, isUserInteracting } from './authEvents'
 const request = axios.create({
   baseURL: '/api',
   timeout: 30000,
+  // 数组参数序列化为重复 key（status=1&status=2），FastAPI list 参数要求此格式；
+  // axios 默认的 status[]=1 形式 FastAPI 收不到，会导致多选筛选静默失效
+  paramsSerializer: (params) => {
+    const search = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value == null) return
+      if (Array.isArray(value)) {
+        value.forEach((v) => search.append(key, String(v)))
+      } else {
+        search.append(key, String(value))
+      }
+    })
+    return search.toString()
+  },
 })
 
 // ---------- 请求拦截：注入 JWT Token ----------

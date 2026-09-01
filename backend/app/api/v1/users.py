@@ -9,7 +9,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PageParams, get_current_user, require_permission
+from app.api.deps import PageParams, get_current_user, require_permission, to_local_naive
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.response import ApiResponse, PageData
@@ -201,6 +201,6 @@ async def audit_logs(
 ) -> ApiResponse[list[AuditLogItem]]:
     items = await user_service.list_audit_logs(
         db, current_user=current_user, username=username, action=action,
-        start_time=start_time, end_time=end_time, group_type=group_type,
+        start_time=to_local_naive(start_time), end_time=to_local_naive(end_time), group_type=group_type,
     )
     return ApiResponse(data=items)

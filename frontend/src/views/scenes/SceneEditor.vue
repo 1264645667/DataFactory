@@ -27,7 +27,8 @@
 
     <!-- 右侧画布区域 -->
     <div class="canvas-area">
-      <div class="canvas-wrap gradient-border-card">
+      <!-- drop/dragover 绑在外层容器：VueFlow 内部 DOM 会拦截拖拽事件，绑在组件上可能不触发 -->
+      <div class="canvas-wrap gradient-border-card" @drop="onDrop" @dragover="onDragOver">
         <VueFlow
           v-model:nodes="flowNodes"
           v-model:edges="flowEdges"
@@ -37,8 +38,6 @@
           :max-zoom="2"
           fit-view-on-init
           @connect="onConnect"
-          @drop="onDrop"
-          @dragover="onDragOver"
         >
           <Background pattern-color="#2a2a4a" :gap="22" />
           <Controls position="top-right" />
@@ -185,6 +184,7 @@ function onDragOver(event: DragEvent): void {
 
 /** 拖放到画布：新增场景节点 */
 function onDrop(event: DragEvent): void {
+  event.preventDefault()
   const raw = event.dataTransfer?.getData('application/dataforge-case')
   if (!raw) return
   const c = JSON.parse(raw) as { case_id: number; case_name: string; main_table: string; datasource_name: string }
@@ -344,7 +344,7 @@ onMounted(async () => {
   // 加载 Case 列表与数据源下拉
   try {
     const [caseRes, dsRes] = await Promise.all([
-      casesApi.list({ page: 1, page_size: 200 }),
+      casesApi.list({ page: 1, page_size: 100 }),
       datasourceApi.list().catch(() => null),
     ])
     caseList.value = caseRes.data.items ?? []
