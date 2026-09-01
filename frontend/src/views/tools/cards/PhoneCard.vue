@@ -31,7 +31,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.phone }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -45,13 +45,13 @@ import { useApiTool } from './useApiTool'
 
 const { params, items, loading, generate, refill } = useApiTool(
   { carrier: 'random', count: 10 },
-  async (p) => (await toolsApi.phone(p)).data.list,
+  async (p) => (await toolsApi.phone(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.phone).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['手机号'],
-  rows: items.value.map((i) => [i.phone]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

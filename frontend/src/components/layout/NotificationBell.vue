@@ -59,10 +59,10 @@ let timer: ReturnType<typeof setInterval> | null = null
 async function fetchUnread(): Promise<void> {
   try {
     const res = await notificationsApi.unreadCount()
-    if (res.data.count > unreadCount.value) {
+    if (res.data.unread_count > unreadCount.value) {
       shaking.value = true
     }
-    unreadCount.value = res.data.count
+    unreadCount.value = res.data.unread_count
   } catch {
     // 轮询失败静默
   }
@@ -72,8 +72,8 @@ async function fetchUnread(): Promise<void> {
 async function fetchRecent(): Promise<void> {
   loading.value = true
   try {
-    const res = await notificationsApi.list({ page: 1, page_size: 10, filter: 'unread' })
-    recentList.value = res.data.list
+    const res = await notificationsApi.list({ page: 1, page_size: 10, is_read: 0 })
+    recentList.value = res.data.items ?? []
   } finally {
     loading.value = false
   }
@@ -88,9 +88,9 @@ async function handleClick(item: NotificationItem): Promise<void> {
   } catch {
     // 标记失败不阻塞跳转
   }
-  if (item.link) {
+  if (item.link_url) {
     popoverShow.value = false
-    router.push(item.link)
+    router.push(item.link_url)
   }
 }
 
@@ -151,9 +151,9 @@ watch(popoverShow, (show) => {
   border-radius: 2px;
   flex-shrink: 0;
 }
-.bell-priority.p-high { background: #ef4444; }
-.bell-priority.p-medium { background: #f59e0b; }
-.bell-priority.p-normal { background: #22c55e; }
+.bell-priority.p-1 { background: #ef4444; }
+.bell-priority.p-2 { background: #f59e0b; }
+.bell-priority.p-3 { background: #22c55e; }
 .bell-item-body {
   flex: 1;
   overflow: hidden;

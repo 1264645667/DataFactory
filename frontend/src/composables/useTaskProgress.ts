@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { tasksApi } from '@/api/tasks'
 import { useTaskProgressStore } from '@/stores/taskProgress'
+import type { TaskProgressData } from '@/api/types'
 
 // ============================================================
 // 任务进度组合式函数（轮询逻辑在 taskProgressStore 内统一实现：
@@ -36,5 +37,24 @@ export function useTaskProgress() {
 
   const activeCount = computed(() => store.activeCount)
 
-  return { trackTask, abortTask, minimize, expand, closeTerminal, activeCount, store }
+  /** 是否遍历任务：total_rounds 非空即遍历模式（遍历信息平铺在进度响应上） */
+  function isIterateTask(data: TaskProgressData | null): boolean {
+    return data?.total_rounds != null
+  }
+
+  /** 遍历进度信息（从平铺字段 current_round/total_rounds/current_drive_value 提取） */
+  function iterateProgress(data: TaskProgressData | null): {
+    current_round: number
+    total_rounds: number
+    current_value: string | null
+  } | null {
+    if (data == null || data.total_rounds == null) return null
+    return {
+      current_round: data.current_round ?? 0,
+      total_rounds: data.total_rounds,
+      current_value: data.current_drive_value ?? null,
+    }
+  }
+
+  return { trackTask, abortTask, minimize, expand, closeTerminal, activeCount, store, isIterateTask, iterateProgress }
 }

@@ -33,7 +33,7 @@
             <n-descriptions-item label="备注">{{ tableInfo.table_comment || '-' }}</n-descriptions-item>
             <n-descriptions-item label="存储引擎">{{ tableInfo.engine || '-' }}</n-descriptions-item>
             <n-descriptions-item label="字符集">{{ tableInfo.charset || '-' }}</n-descriptions-item>
-            <n-descriptions-item label="估算行数">{{ formatNumber(tableInfo.row_count) }}</n-descriptions-item>
+            <n-descriptions-item label="估算行数">{{ formatNumber(tableInfo.table_rows) }}</n-descriptions-item>
             <n-descriptions-item label="字段总数">{{ fieldRows.length }}</n-descriptions-item>
             <n-descriptions-item label="最后同步">{{ formatDateTime(tableInfo.synced_at) }}</n-descriptions-item>
           </n-descriptions>
@@ -46,7 +46,7 @@
                 {{ idx.is_primary ? '主键' : idx.is_unique ? '唯一索引' : '普通索引' }}
               </n-tag>
               <span class="index-name">{{ idx.index_name }}</span>
-              <span class="dim">({{ idx.columns.join(', ') }})</span>
+              <span class="dim">({{ idx.column_names.join(', ') }})</span>
             </div>
             <span v-if="indexes.length === 0" class="dim">无索引</span>
           </div>
@@ -289,14 +289,14 @@ function isRequired(c: ColumnInfo): boolean {
 async function loadPage(): Promise<void> {
   pageLoading.value = true
   try {
+    // 字段与索引接口均返回纯数组
     const [colRes, idxRes] = await Promise.all([
       engineApi.columns(datasourceId, tableName),
       engineApi.indexes(datasourceId, tableName),
     ])
-    tableInfo.value = colRes.data.table
     indexes.value = idxRes.data
     // 初始化策略：优先后端推断，其次前端推断
-    fieldRows.value = colRes.data.columns.map((c) => {
+    fieldRows.value = colRes.data.map((c) => {
       const inferred =
         c.suggested_strategy != null
           ? { strategy: c.suggested_strategy as StrategyCode, params: (c.suggested_params ?? {}) as Record<string, unknown> }
@@ -306,10 +306,10 @@ async function loadPage(): Promise<void> {
     // 编辑模式：回显已保存配置
     if (caseId) {
       const detail = await casesApi.detail(caseId)
-      existingCaseName.value = detail.data.name
-      const cfg = detail.data.config_json
+      existingCaseName.value = detail.data.case_name
+      const cfg = detail.data.config
       const cfgMap = new Map(cfg.field_configs.map((f) => [f.column_name, f]))
-      const existingNames = new Set(colRes.data.columns.map((c) => c.column_name))
+      const existingNames = new Set(colRes.data.map((c) => c.column_name))
       outdatedFields.value = cfg.field_configs.filter((f) => !existingNames.has(f.column_name)).map((f) => f.column_name)
       fieldRows.value.forEach((row) => {
         const saved = cfgMap.get(row.column.column_name)
@@ -358,8 +358,8 @@ function buildFieldConfigs(): FieldStrategyConfig[] {
     column_name: r.column.column_name,
     data_type: r.column.data_type,
     column_type: r.column.column_type,
-    is_nullable: r.column.is_nullable,
-    is_primary_key: r.column.is_primary_key,
+    is_nullable: !!r.column.is_nullable,
+    is_primary_key: !!r.column.is_primary_key,
     strategy: r.strategy,
     strategy_params: r.params,
   }))
@@ -407,7 +407,7 @@ async function loadTargetColumns(): Promise<void> {
   targetColumns.value = []
   if (!assocForm.targetTable) return
   const res = await engineApi.columns(datasourceId, assocForm.targetTable)
-  targetColumns.value = res.data.columns
+  targetColumns.value = res.data
 }
 
 /** 关联环检测（有向图 DFS） */
@@ -513,16 +513,14 @@ async function handleSaveOnly(): Promise<void> {
   try {
     if (isEdit && caseId) {
       await casesApi.update(caseId, {
-        name,
-        config_json: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        case_name: name,
+        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
       })
     } else {
       await engineApi.save({
         case_name: name,
         datasource_id: datasourceId,
-        main_table: tableName,
-        field_configs: buildFieldConfigs(),
-        associations: associations.value,
+        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
       })
     }
     window.$message.success('Case 已保存')
@@ -547,8 +545,8 @@ async function handleExecute(payload: { caseName: string; targetCount: number })
     if (isEdit && caseId) {
       // 编辑模式：先保存最新配置再执行
       await casesApi.update(caseId, {
-        name: payload.caseName,
-        config_json: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        case_name: payload.caseName,
+        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
       })
       const res = await casesApi.execute(caseId, payload.targetCount)
       taskNo = res.data.task_no
@@ -556,10 +554,8 @@ async function handleExecute(payload: { caseName: string; targetCount: number })
       const res = await engineApi.execute({
         case_name: payload.caseName,
         datasource_id: datasourceId,
-        main_table: tableName,
         target_count: payload.targetCount,
-        field_configs: buildFieldConfigs(),
-        associations: associations.value,
+        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
       })
       taskNo = res.data.task_no
     }
@@ -607,10 +603,11 @@ function handleBack(): void {
 
 onMounted(async () => {
   await loadPage()
-  // 关联管理需要目标表列表
+  // 关联管理需要目标表列表；表基本信息改由表列表接口获取（columns 接口为纯数组）
   try {
     const res = await engineApi.tables(datasourceId)
     targetTables.value = res.data.filter((t) => t.table_name !== tableName)
+    tableInfo.value = res.data.find((t) => t.table_name === tableName) ?? null
   } catch {
     // 目标表列表加载失败不阻塞主流程
   }

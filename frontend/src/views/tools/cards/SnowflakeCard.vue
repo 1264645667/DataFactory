@@ -44,7 +44,7 @@ import { useApiTool } from './useApiTool'
 
 const { params, items, loading, generate, refill } = useApiTool(
   { machine_id: 1, datacenter_id: 1, count: 10 },
-  async (p) => (await toolsApi.snowflake(p)).data.list,
+  async (p) => (await toolsApi.snowflake(p)).data.results ?? [],
 )
 
 const columns: DataTableColumns<SnowflakeItem> = [
@@ -58,7 +58,7 @@ const columns: DataTableColumns<SnowflakeItem> = [
 const copyContent = computed(() => items.value.map((i) => i.id).join('\n'))
 const exportData = computed(() => ({
   headers: ['雪花ID', '时间戳', '机器ID', '数据中心', '序列号'],
-  rows: items.value.map((i) => [i.id, i.timestamp, String(i.machine_id), String(i.datacenter_id), String(i.sequence)]),
+  rows: items.value.map((i) => [i.id, String(i.timestamp), String(i.machine_id), String(i.datacenter_id), String(i.sequence)]),
 }))
 </script>
 

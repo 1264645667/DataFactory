@@ -32,7 +32,7 @@
                 <span class="notify-time">{{ formatDateTime(item.created_at) }}</span>
               </div>
               <div class="notify-content">{{ item.content }}</div>
-              <div v-if="item.link" class="notify-link">查看详情 →</div>
+              <div v-if="item.link_url" class="notify-link">查看详情 →</div>
             </div>
           </div>
           <EmptyState v-if="!loading && list.length === 0" description="暂无消息，小猫在打盹～" />
@@ -50,7 +50,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { notificationsApi } from '@/api/notifications'
-import type { NotificationItem } from '@/api/types'
+import type { NotificationItem, NotificationQuery } from '@/api/types'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { formatDateTime } from '@/utils/formatter'
 
@@ -69,14 +69,19 @@ async function fetchList(append = false): Promise<void> {
   if (append) loadingMore.value = true
   else loading.value = true
   try {
-    const res = await notificationsApi.list({ page: page.value, page_size: pageSize, filter: filter.value })
+    // filter 转后端参数：'all'→不传，'unread'→is_read=0，'high'→priority=1
+    const query: NotificationQuery = { page: page.value, page_size: pageSize }
+    if (filter.value === 'unread') query.is_read = 0
+    else if (filter.value === 'high') query.priority = 1
+    const res = await notificationsApi.list(query)
+    const newItems = res.data.items ?? []
     if (append) {
-      list.value = [...list.value, ...res.data.list]
+      list.value = [...list.value, ...newItems]
     } else {
-      list.value = res.data.list
+      list.value = newItems
     }
-    total.value = res.data.total
-    hasMore.value = list.value.length < res.data.total
+    total.value = res.data.total ?? 0
+    hasMore.value = list.value.length < total.value
   } finally {
     loading.value = false
     loadingMore.value = false
@@ -98,20 +103,20 @@ async function handleClick(item: NotificationItem): Promise<void> {
   if (!item.is_read) {
     try {
       await notificationsApi.markRead(item.id)
-      item.is_read = true
+      item.is_read = 1
     } catch {
       // 标记失败不阻塞跳转
     }
   }
-  if (item.link) {
-    router.push(item.link)
+  if (item.link_url) {
+    router.push(item.link_url)
   }
 }
 
 /** 全部标为已读 */
 async function handleReadAll(): Promise<void> {
   await notificationsApi.markAllRead()
-  list.value.forEach((n) => (n.is_read = true))
+  list.value.forEach((n) => (n.is_read = 1))
   window.$message.success('已全部标为已读')
 }
 
@@ -153,9 +158,9 @@ onMounted(reload)
   border-radius: 2px;
   flex-shrink: 0;
 }
-.priority-bar.p-high { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
-.priority-bar.p-medium { background: #f59e0b; }
-.priority-bar.p-normal { background: #22c55e; }
+.priority-bar.p-1 { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+.priority-bar.p-2 { background: #f59e0b; }
+.priority-bar.p-3 { background: #22c55e; }
 .notify-body {
   flex: 1;
   overflow: hidden;

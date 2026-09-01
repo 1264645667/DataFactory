@@ -9,7 +9,6 @@ GET /exec-records  执行记录明细表（分页 + 筛选）
 """
 
 from datetime import datetime
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import PageParams, require_permission
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.errors import PARAM_INVALID, BizException
 from app.schemas.overview import (
     ExecRecordItem,
     MemberRankItem,
@@ -27,6 +27,15 @@ from app.schemas.overview import (
 )
 from app.schemas.response import ApiResponse, PageData
 from app.services import overview_service
+
+_VALID_DAYS = {7, 30, 90}
+
+
+def _parse_days(days: int) -> int:
+    """校验 days 参数，仅允许 7/30/90。"""
+    if days not in _VALID_DAYS:
+        raise BizException(PARAM_INVALID, f"days 必须是 {', '.join(map(str, sorted(_VALID_DAYS)))} 之一")
+    return days
 
 router = APIRouter()
 
@@ -42,40 +51,44 @@ async def get_metrics(
 
 @router.get("/trend", summary="执行趋势折线图数据")
 async def get_trend(
-    days: Literal[7, 30, 90] = Query(default=30, description="查看范围：近 7/30/90 天"),
+    days: int = Query(default=30, description="查看范围：近 7/30/90 天"),
     current_user: User = Depends(require_permission("OVERVIEW:VIEW")),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[TrendResponse]:
+    days = _parse_days(days)
     data = await overview_service.get_trend(db, current_user=current_user, days=days)
     return ApiResponse(data=data)
 
 
 @router.get("/status-dist", summary="执行状态分布饼图数据")
 async def get_status_dist(
-    days: Literal[7, 30, 90] = Query(default=30),
+    days: int = Query(default=30),
     current_user: User = Depends(require_permission("OVERVIEW:VIEW")),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[StatusDistResponse]:
+    days = _parse_days(days)
     data = await overview_service.get_status_dist(db, current_user=current_user, days=days)
     return ApiResponse(data=data)
 
 
 @router.get("/table-top10", summary="表操作量 Top10 柱状图数据")
 async def get_table_top10(
-    days: Literal[7, 30, 90] = Query(default=30),
+    days: int = Query(default=30),
     current_user: User = Depends(require_permission("OVERVIEW:VIEW")),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[list[TableTopItem]]:
+    days = _parse_days(days)
     items = await overview_service.get_table_top10(db, current_user=current_user, days=days)
     return ApiResponse(data=items)
 
 
 @router.get("/member-rank", summary="成员贡献排行数据")
 async def get_member_rank(
-    days: Literal[7, 30, 90] = Query(default=30),
+    days: int = Query(default=30),
     current_user: User = Depends(require_permission("OVERVIEW:VIEW")),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[list[MemberRankItem]]:
+    days = _parse_days(days)
     items = await overview_service.get_member_rank(db, current_user=current_user, days=days)
     return ApiResponse(data=items)
 

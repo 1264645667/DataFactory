@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ApiResponse, Datasource, DatasourceForm } from './types'
+import type { ApiResponse, Datasource, DatasourceForm, DatasourceStatus, DatasourceTestResult } from './types'
 
 // 数据源模块 /api/v1/datasources
 export const datasourceApi = {
@@ -9,7 +9,7 @@ export const datasourceApi = {
   },
   /** 新增数据源 */
   create(form: DatasourceForm) {
-    return request.post<unknown, ApiResponse<{ id: number }>>('/v1/datasources', form)
+    return request.post<unknown, ApiResponse<Datasource>>('/v1/datasources', form)
   },
   /** 编辑数据源 */
   update(id: number, form: Partial<DatasourceForm>) {
@@ -19,9 +19,9 @@ export const datasourceApi = {
   remove(id: number) {
     return request.delete<unknown, ApiResponse<null>>(`/v1/datasources/${id}`)
   },
-  /** 测试连接（表单页按钮，不保存） */
+  /** 测试连接（表单页按钮，不保存）；连接失败时 code=0 但 success=false */
   test(form: Partial<DatasourceForm>) {
-    return request.post<unknown, ApiResponse<{ version?: string; message?: string }>>('/v1/datasources/test', form)
+    return request.post<unknown, ApiResponse<DatasourceTestResult>>('/v1/datasources/test', form)
   },
   /** 手动触发表结构同步 */
   sync(id: number) {
@@ -29,6 +29,6 @@ export const datasourceApi = {
   },
   /** 获取数据源连接状态（心跳） */
   status(id: number) {
-    return request.get<unknown, ApiResponse<{ status: Datasource['status']; cache_status: Datasource['cache_status']; last_sync_at: string | null }>>(`/v1/datasources/${id}/status`)
+    return request.get<unknown, ApiResponse<DatasourceStatus>>(`/v1/datasources/${id}/status`)
   },
 }

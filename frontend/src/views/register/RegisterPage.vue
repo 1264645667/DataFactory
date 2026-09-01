@@ -51,9 +51,9 @@
             </n-radio-group>
             <template #feedback>请根据你所在业务组选择，审批后不可自行修改</template>
           </n-form-item>
-          <n-form-item path="reason" label="申请理由（选填）">
+          <n-form-item path="apply_reason" label="申请理由（选填）">
             <n-input
-              v-model:value="form.reason"
+              v-model:value="form.apply_reason"
               type="textarea"
               :rows="2"
               maxlength="200"
@@ -93,7 +93,7 @@ const form = reactive({
   confirmPassword: '',
   realName: '',
   groupType: 1 as 1 | 2,
-  reason: '',
+  apply_reason: '',
 })
 
 // 密码强度：弱（仅满足长度）/ 中（数字+字母）/ 强（含特殊字符或长度 ≥12）
@@ -149,7 +149,7 @@ async function handleSubmit(): Promise<void> {
       password: form.password,
       real_name: form.realName,
       group_type: form.groupType,
-      reason: form.reason || undefined,
+      apply_reason: form.apply_reason || undefined,
     })
     submitted.value = true
   } catch {

@@ -1,7 +1,7 @@
 """安全模块：bcrypt 密码哈希、JWT 认证、Token 黑名单、AES-256-CBC 加解密。
 
 对应架构文档 6.5 / 14 章、PRD 9.3 安全要求。
-注意：passlib 1.7.4 与 bcrypt>=4.1 不兼容，requirements.txt 已锁定 bcrypt<4.1。
+说明：bcrypt 5.x 移除了 __about__ 导致 passlib 兼容性问题，本模块直接使用 bcrypt 库。
 """
 
 import base64
@@ -9,16 +9,13 @@ import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+import bcrypt
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import settings
 from app.core.redis_client import redis_client
 from app.schemas.errors import TOKEN_BLACKLISTED, UNAUTHORIZED, BizException
-
-# bcrypt 哈希上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT 黑名单 Redis Key 前缀（文档 5.1）
 TOKEN_BLACKLIST_PREFIX = "df:token:blacklist:"
@@ -28,13 +25,18 @@ TOKEN_BLACKLIST_PREFIX = "df:token:blacklist:"
 
 
 def get_password_hash(password: str) -> str:
-    """生成 bcrypt 密码哈希。"""
-    return pwd_context.hash(password)
+    """生成 bcrypt 密码哈希（使用官方 bcrypt 库，兼容 5.x）。"""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """校验明文密码与 bcrypt 哈希是否匹配。"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+        )
+    except Exception:
+        return False
 
 
 # ── JWT 生成与校验 ────────────────────────────────────────────

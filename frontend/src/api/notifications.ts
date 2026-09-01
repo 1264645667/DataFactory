@@ -1,14 +1,20 @@
 import request from '@/utils/request'
-import type { ApiResponse, NotificationItem, PageResult } from './types'
+import type {
+  ApiResponse,
+  NotificationItem,
+  NotificationQuery,
+  PageResult,
+  UnreadCountResult,
+} from './types'
 
 // 消息通知模块 /api/v1/notifications
 export const notificationsApi = {
   /** 获取未读消息数量（前端每 60s 轮询） */
   unreadCount() {
-    return request.get<unknown, ApiResponse<{ count: number }>>('/v1/notifications/unread-count')
+    return request.get<unknown, ApiResponse<UnreadCountResult>>('/v1/notifications/unread-count')
   },
-  /** 消息列表（分页，支持筛选已读/未读/优先级） */
-  list(params: { page?: number; page_size?: number; filter?: 'all' | 'unread' | 'high' }) {
+  /** 消息列表（分页，用 is_read/priority 筛选） */
+  list(params: NotificationQuery) {
     return request.get<unknown, ApiResponse<PageResult<NotificationItem>>>('/v1/notifications', { params })
   },
   /** 标记单条消息为已读 */
@@ -17,6 +23,6 @@ export const notificationsApi = {
   },
   /** 全部标为已读 */
   markAllRead() {
-    return request.post<unknown, ApiResponse<null>>('/v1/notifications/read-all')
+    return request.post<unknown, ApiResponse<{ updated_count: number }>>('/v1/notifications/read-all')
   },
 }

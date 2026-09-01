@@ -36,7 +36,7 @@ class Settings(BaseSettings):
         return self.DATABASE_URL.replace("+aiomysql", "+pymysql")
 
     # ── Redis ────────────────────────────────────────────────
-    REDIS_URL: str = "redis://baiwang@172.28.31.239:6379/3"
+    REDIS_URL: str = "redis://:baiwang@172.28.31.239:6379/3"
 
     # ── 密钥（生产环境必须通过环境变量注入，文档 14.2）─────────
     # JWT 签名密钥，至少 32 位随机字符串
@@ -55,9 +55,11 @@ class Settings(BaseSettings):
     # ── Nacos（文档第 8 章）──────────────────────────────────
     NACOS_SERVER: str = "localhost:8848"
     NACOS_NAMESPACE: str = ""  # 留空 = public 命名空间
-    NACOS_GROUP: str = "DATAFORGE_GROUP"
+    NACOS_GROUP: str = "datafactory_group"  # 配置分组，与控制台创建的 Group 保持一致
     NACOS_USERNAME: str = "nacos"
     NACOS_PASSWORD: str = "nacos"
+    # Nacos 中统一的业务配置 Data ID
+    NACOS_DATA_ID: str = "popsicle_datafactory_config"
 
     # ── 系统 DB 连接池（文档 12.4）────────────────────────────
     DB_POOL_SIZE: int = 10

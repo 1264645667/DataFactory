@@ -406,7 +406,7 @@ def generate_snowflakes(*, machine_id: int, datacenter_id: int, count: int) -> l
         machine = (snowflake_id >> SnowflakeIdGenerator.MACHINE_SHIFT) & SnowflakeIdGenerator.MAX_MACHINE
         sequence = snowflake_id & SnowflakeIdGenerator.MAX_SEQUENCE
         results.append({
-            "id": snowflake_id,
+            "id": str(snowflake_id),  # 字符串承载，避免前端 JS Number 精度丢失
             "timestamp": timestamp,
             "machine_id": machine,
             "datacenter_id": dc,

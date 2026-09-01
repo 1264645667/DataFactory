@@ -6,7 +6,7 @@
         <!-- 基本信息卡片 -->
         <div class="gradient-border-card info-card">
           <div class="info-head">
-            <h3 class="info-title">{{ detail.name }}</h3>
+            <h3 class="info-title">{{ detail.case_name }}</h3>
             <div class="info-actions">
               <n-button v-if="hasPermission('CASE:EDIT')" size="small" @click="goEdit">编辑</n-button>
               <n-button v-if="hasPermission('CASE:EXECUTE')" size="small" class="gradient-btn" @click="executeShow = true">执行</n-button>
@@ -16,7 +16,7 @@
           <n-descriptions :column="3" label-placement="left" size="small">
             <n-descriptions-item label="数据源">{{ detail.datasource_name }}</n-descriptions-item>
             <n-descriptions-item label="主表">{{ detail.main_table }}</n-descriptions-item>
-            <n-descriptions-item label="创建人">{{ detail.created_by_name }}</n-descriptions-item>
+            <n-descriptions-item label="创建人">{{ detail.creator_name }}</n-descriptions-item>
             <n-descriptions-item label="创建时间">{{ formatDateTime(detail.created_at) }}</n-descriptions-item>
             <n-descriptions-item label="最后执行">{{ detail.last_exec_at ? formatDateTime(detail.last_exec_at) : '未执行' }}</n-descriptions-item>
           </n-descriptions>
@@ -62,7 +62,7 @@
       :main-table="detail?.main_table ?? ''"
       :related-tables="relatedTables"
       :iterate-info="iterateInfo"
-      :initial-name="detail?.name ?? ''"
+      :initial-name="detail?.case_name ?? ''"
       name-readonly
       :submitting="executing"
       @confirm="handleExecute"
@@ -103,7 +103,7 @@ const caseId = Number(route.params.id)
 const loading = ref(true)
 const detail = ref<CaseDetail | null>(null)
 
-const config = computed(() => detail.value?.config_json ?? { version: '1.0', main_table: '', field_configs: [], associations: [] })
+const config = computed(() => detail.value?.config ?? { version: '1.0', main_table: '', field_configs: [], associations: [] })
 const relatedTables = computed(() => [...new Set(config.value.associations.map((a) => a.target_table))])
 
 const iterateInfo = computed(() => {
@@ -219,7 +219,7 @@ onMounted(async () => {
   try {
     const res = await casesApi.detail(caseId)
     detail.value = res.data
-    copyName.value = `${res.data.name}_copy`
+    copyName.value = `${res.data.case_name}_copy`
   } finally {
     loading.value = false
   }

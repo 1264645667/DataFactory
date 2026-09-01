@@ -120,7 +120,7 @@ const filteredTables = computed(() => {
   }
   const sorted = [...data]
   if (sortBy.value === 'name') sorted.sort((a, b) => a.table_name.localeCompare(b.table_name))
-  else if (sortBy.value === 'rows') sorted.sort((a, b) => b.row_count - a.row_count)
+  else if (sortBy.value === 'rows') sorted.sort((a, b) => b.table_rows - a.table_rows)
   else sorted.sort((a, b) => b.column_count - a.column_count)
   return sorted
 })
@@ -140,7 +140,7 @@ const columns: DataTableColumns<TableInfo> = [
       h('a', { style: 'color:#a78bfa;cursor:pointer;font-weight:600', onClick: () => goConfig(row.table_name) }, row.table_name),
   },
   { title: '中文备注', key: 'table_comment', render: (r) => r.table_comment || '-', ellipsis: { tooltip: true } },
-  { title: '数据量（估算）', key: 'row_count', width: 130, render: (r) => formatNumber(r.row_count) },
+  { title: '数据量（估算）', key: 'table_rows', width: 130, render: (r) => formatNumber(r.table_rows) },
   { title: '字段数', key: 'column_count', width: 90 },
   { title: '主键类型', key: 'pk_type', width: 100, render: (r) => PK_TYPE_TEXT[r.pk_type] ?? '-' },
   { title: '唯一索引数', key: 'unique_index_count', width: 100 },
@@ -213,17 +213,24 @@ const relatedCases = ref<CaseItem[]>([])
 const activeTable = ref('')
 
 const caseColumns: DataTableColumns<CaseItem> = [
-  { title: 'Case 名称', key: 'name', render: (r) => h('a', { style: 'color:#a78bfa;cursor:pointer', onClick: () => router.push(`/cases/${r.id}`) }, r.name) },
-  { title: '创建人', key: 'created_by_name', width: 100 },
+  { title: 'Case 名称', key: 'case_name', render: (r) => h('a', { style: 'color:#a78bfa;cursor:pointer', onClick: () => router.push(`/cases/${r.id}`) }, r.case_name) },
+  { title: '创建人', key: 'creator_name', width: 100 },
   { title: '创建时间', key: 'created_at', width: 150, render: (r) => formatDateTime(r.created_at) },
   {
     title: '最后执行状态',
     key: 'last_exec_status',
     width: 110,
-    render: (r) =>
-      r.last_exec_status
-        ? h(NTag, { size: 'small', type: r.last_exec_status === 'success' ? 'success' : 'error' }, () => r.last_exec_status)
-        : h(NTag, { size: 'small' }, () => '未执行'),
+    render: (r) => {
+      // 摘要码：0未执行 1成功 2失败 3部分成功
+      if (r.last_exec_status == null || r.last_exec_status === 0) return h(NTag, { size: 'small' }, () => '未执行')
+      const map: Record<number, { type: 'success' | 'warning' | 'error'; text: string }> = {
+        1: { type: 'success', text: '成功' },
+        2: { type: 'error', text: '失败' },
+        3: { type: 'warning', text: '部分成功' },
+      }
+      const s = map[r.last_exec_status] ?? { type: 'error' as const, text: String(r.last_exec_status) }
+      return h(NTag, { size: 'small', type: s.type }, () => s.text)
+    },
   },
 ]
 
@@ -233,7 +240,7 @@ async function openRelatedCases(tableName: string): Promise<void> {
   casesLoading.value = true
   try {
     const res = await casesApi.list({ page: 1, page_size: 100, datasource_id: currentId.value ?? undefined, main_table: tableName })
-    relatedCases.value = res.data.list
+    relatedCases.value = res.data.items ?? []
   } finally {
     casesLoading.value = false
   }

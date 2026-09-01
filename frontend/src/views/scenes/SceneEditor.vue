@@ -16,7 +16,7 @@
           draggable="true"
           @dragstart="onDragStart($event, c)"
         >
-          <div class="case-card-name">{{ c.name }}</div>
+          <div class="case-card-name">{{ c.case_name }}</div>
           <div class="case-card-meta">主表：{{ c.main_table }}</div>
           <div class="case-card-meta">数据源：{{ c.datasource_name }}</div>
         </div>
@@ -126,7 +126,7 @@ const dsOptions = ref<Array<{ label: string; value: number }>>([])
 const filteredCases = computed(() => {
   let data = caseList.value
   const kw = caseKeyword.value.trim().toLowerCase()
-  if (kw) data = data.filter((c) => c.name.toLowerCase().includes(kw))
+  if (kw) data = data.filter((c) => c.case_name.toLowerCase().includes(kw))
   if (caseDsFilter.value != null) data = data.filter((c) => c.datasource_id === caseDsFilter.value)
   return data
 })
@@ -135,6 +135,7 @@ const filteredCases = computed(() => {
 const flowNodes = ref<Node[]>([])
 const flowEdges = ref<Edge[]>([])
 const sceneName = ref('')
+const sceneDescription = ref<string | null>(null)
 const saving = ref(false)
 
 const { screenToFlowCoordinate, fitView } = useVueFlow()
@@ -172,7 +173,7 @@ function genNodeId(): string {
 function onDragStart(event: DragEvent, c: CaseItem): void {
   event.dataTransfer?.setData(
     'application/dataforge-case',
-    JSON.stringify({ case_id: c.id, case_name: c.name, main_table: c.main_table, datasource_name: c.datasource_name }),
+    JSON.stringify({ case_id: c.id, case_name: c.case_name, main_table: c.main_table, datasource_name: c.datasource_name }),
   )
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
@@ -312,7 +313,12 @@ async function handleSave(execute: boolean): Promise<void> {
   if (!validateScene()) return
   saving.value = true
   try {
-    const payload = { name: sceneName.value.trim(), nodes_json: toSceneNodes(), edges_json: toSceneEdges() }
+    const payload = {
+      scene_name: sceneName.value.trim(),
+      description: sceneDescription.value,
+      nodes: toSceneNodes(),
+      edges: toSceneEdges(),
+    }
     let id = sceneId
     if (isEdit && id) {
       await scenesApi.update(id, payload)
@@ -322,7 +328,7 @@ async function handleSave(execute: boolean): Promise<void> {
     }
     if (execute && id) {
       const res = await scenesApi.execute(id)
-      trackScene(res.data.scene_exec_no, payload.name)
+      trackScene(res.data.scene_exec_no, payload.scene_name)
       router.push('/scenes')
     } else {
       window.$message.success('场景已保存')
@@ -341,7 +347,7 @@ onMounted(async () => {
       casesApi.list({ page: 1, page_size: 200 }),
       datasourceApi.list().catch(() => null),
     ])
-    caseList.value = caseRes.data.list
+    caseList.value = caseRes.data.items ?? []
     if (dsRes) dsOptions.value = dsRes.data.map((d) => ({ label: d.name, value: d.id }))
   } catch {
     // Case 列表失败由拦截器提示
@@ -350,8 +356,9 @@ onMounted(async () => {
   if (sceneId) {
     const res = await scenesApi.detail(sceneId)
     const d = res.data
-    sceneName.value = d.name
-    flowNodes.value = d.nodes_json.map((n) => ({
+    sceneName.value = d.scene_name
+    sceneDescription.value = d.description
+    flowNodes.value = d.nodes.map((n) => ({
       id: n.node_id,
       type: 'case',
       position: n.position,
@@ -362,7 +369,7 @@ onMounted(async () => {
         fail_strategy: n.fail_strategy,
       },
     }))
-    flowEdges.value = d.edges_json.map((e) => ({
+    flowEdges.value = d.edges.map((e) => ({
       id: e.edge_id,
       source: e.source,
       target: e.target,

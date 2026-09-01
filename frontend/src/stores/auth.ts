@@ -19,8 +19,9 @@ export const useAuthStore = defineStore('auth', () => {
   /** 登录：保存 Token 并拉取用户信息 */
   async function login(username: string, password: string): Promise<void> {
     const res = await authApi.login({ username, password })
-    token.value = res.data.token
-    localStorage.setItem('df_token', res.data.token)
+    // 后端返回字段为 access_token（见 LoginResponse schema）
+    token.value = res.data.access_token
+    localStorage.setItem('df_token', res.data.access_token)
     await fetchMe()
   }
 

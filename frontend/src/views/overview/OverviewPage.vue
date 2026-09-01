@@ -141,7 +141,7 @@
               <n-descriptions-item label="主表">{{ detail.main_table }}</n-descriptions-item>
               <n-descriptions-item label="目标条数">{{ formatNumber(detail.target_count) }}</n-descriptions-item>
               <n-descriptions-item label="实际插入">{{ formatNumber(detail.success_count) }}</n-descriptions-item>
-              <n-descriptions-item label="耗时">{{ formatDuration(detail.duration_seconds) }}</n-descriptions-item>
+              <n-descriptions-item label="耗时">{{ formatDurationMs(detail.duration_ms) }}</n-descriptions-item>
             </n-descriptions>
 
             <!-- 错误信息 -->
@@ -151,15 +151,6 @@
                 <n-button text size="tiny" type="primary" @click="copyError">复制</n-button>
               </div>
             </n-alert>
-
-            <!-- 分表执行情况 -->
-            <h4 class="section-title">分表执行情况</h4>
-            <n-data-table
-              :columns="tableColumns"
-              :data="detail.tables"
-              size="small"
-              :pagination="false"
-            />
 
             <!-- 分批次日志 -->
             <h4 class="section-title">分批次日志</h4>
@@ -206,12 +197,11 @@ import type {
   StatusDistItem,
   TableTopItem,
   TaskDetailData,
-  TaskTableProgress,
   TrendPoint,
   BatchLog,
 } from '@/api/types'
 import { useEcharts } from '@/composables/useEcharts'
-import { copyText, formatDateTime, formatDuration, formatNumber } from '@/utils/formatter'
+import { copyText, formatDateTime, formatDurationMs, formatNumber } from '@/utils/formatter'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const route = useRoute()
@@ -222,15 +212,15 @@ const metricsLoading = ref(true)
 
 const metricCards = computed(() => {
   const m = metrics.value
-  const d = m?.deltas ?? {}
+  const d = m?.compare_yesterday ?? {}
   return [
-    { key: 'cases', name: '总 Case 数', value: formatNumber(m?.total_cases), icon: LayersOutline, color: '#a78bfa', delta: d.total_cases },
-    { key: 'scenes', name: '总场景数', value: formatNumber(m?.total_scenes), icon: AlbumsOutline, color: '#60a5fa', delta: d.total_scenes },
+    { key: 'cases', name: '总 Case 数', value: formatNumber(m?.total_case_count), icon: LayersOutline, color: '#a78bfa', delta: d.total_case_count },
+    { key: 'scenes', name: '总场景数', value: formatNumber(m?.total_scene_count), icon: AlbumsOutline, color: '#60a5fa', delta: d.total_scene_count },
     { key: 'today', name: '今日执行次数', value: formatNumber(m?.today_exec_count), icon: FlashOutline, color: '#fbbf24', delta: d.today_exec_count },
-    { key: 'rows', name: '累计造数条数', value: formatNumber(m?.total_rows), icon: StatsChartOutline, color: '#34d399', delta: d.total_rows },
-    { key: 'rate', name: '执行成功率', value: m ? `${m.success_rate.toFixed(1)}%` : '-', icon: CheckmarkCircleOutline, color: '#22c55e', delta: d.success_rate },
-    { key: 'ds', name: '活跃数据源数', value: formatNumber(m?.active_datasources), icon: ServerOutline, color: '#22d3ee', delta: d.active_datasources },
-    { key: 'member', name: '本组成员数', value: formatNumber(m?.member_count), icon: PeopleOutline, color: '#f472b6', delta: d.member_count },
+    { key: 'rows', name: '累计造数条数', value: formatNumber(m?.total_row_count), icon: StatsChartOutline, color: '#34d399', delta: d.total_row_count },
+    { key: 'rate', name: '执行成功率', value: m && typeof m.exec_success_rate === 'number' ? `${m.exec_success_rate.toFixed(1)}%` : '-', icon: CheckmarkCircleOutline, color: '#22c55e', delta: d.exec_success_rate },
+    { key: 'ds', name: '活跃数据源数', value: formatNumber(m?.active_datasource_count), icon: ServerOutline, color: '#22d3ee', delta: d.active_datasource_count },
+    { key: 'member', name: '本组成员数', value: formatNumber(m?.group_member_count), icon: PeopleOutline, color: '#f472b6', delta: d.group_member_count },
   ]
 })
 
@@ -252,13 +242,35 @@ const pieChart = useEcharts(pieRef)
 const top10Chart = useEcharts(top10Ref)
 const memberChart = useEcharts(memberRef)
 
-const STATUS_NAME: Record<string, string> = {
+/** 执行状态完整码：0待执行 1执行中 2成功 3失败 4重试中 5部分成功 6已中止 */
+const STATUS_CODE_NAME: Record<number, string> = {
+  0: '待执行',
+  1: '执行中',
+  2: '成功',
+  3: '失败',
+  4: '重试中',
+  5: '部分成功',
+  6: '已中止',
+}
+/** 状态分布接口返回的字符串状态 → 中文名 */
+const DIST_STATUS_NAME: Record<string, string> = {
+  submitted: '待执行',
+  running: '执行中',
   success: '成功',
   failed: '失败',
-  running: '执行中',
   retrying: '重试中',
   partial_success: '部分成功',
   aborted: '已中止',
+}
+/** 状态分布字符串状态 → 完整状态码 */
+const DIST_STATUS_CODE: Record<string, number> = {
+  submitted: 0,
+  running: 1,
+  success: 2,
+  failed: 3,
+  retrying: 4,
+  partial_success: 5,
+  aborted: 6,
 }
 const STATUS_COLOR: Record<string, string> = {
   success: '#22c55e',
@@ -267,6 +279,7 @@ const STATUS_COLOR: Record<string, string> = {
   retrying: '#f97316',
   partial_success: '#eab308',
   aborted: '#64748b',
+  submitted: '#94a3b8',
 }
 
 async function loadCharts(): Promise<void> {
@@ -278,8 +291,8 @@ async function loadCharts(): Promise<void> {
       overviewApi.tableTop10(trendDays.value),
       overviewApi.memberRank(trendDays.value),
     ])
-    trendData.value = trend.data
-    statusData.value = dist.data
+    trendData.value = trend.data.points ?? []
+    statusData.value = dist.data.items ?? []
     top10Data.value = top10.data
     memberData.value = member.data
     renderTrend()
@@ -339,19 +352,20 @@ function renderPie(): void {
         radius: ['52%', '72%'],
         label: { color: '#94a3b8' },
         data: statusData.value.map((i) => ({
-          name: STATUS_NAME[i.status] ?? i.status,
+          name: DIST_STATUS_NAME[i.status] ?? i.status,
           value: i.count,
           itemStyle: { color: STATUS_COLOR[i.status] ?? '#94a3b8' },
         })),
       },
     ],
   })
-  // 点击扇形 → 明细表按状态过滤
+  // 点击扇形 → 明细表按状态过滤（字符串状态名 → 完整状态码 0~6）
   pieChart.on('click', (params: unknown) => {
     const name = (params as { name: string }).name
-    const code = Object.entries(STATUS_NAME).find(([, v]) => v === name)?.[0]
-    if (code) {
-      filters.status = [code]
+    const key = Object.entries(DIST_STATUS_NAME).find(([, v]) => v === name)?.[0]
+    const statusCode = key != null ? DIST_STATUS_CODE[key] : undefined
+    if (statusCode != null) {
+      filters.status = [statusCode]
       loadRecords(1)
     }
   })
@@ -386,7 +400,7 @@ function renderTop10(): void {
     const item = top10Data.value[idx]
     if (!item) return
     const res = await overviewApi.execRecords({ page: 1, page_size: 50, table_name: item.table_name })
-    drillRecords.value = res.data.list
+    drillRecords.value = res.data.items ?? []
     drillShow.value = true
   })
 }
@@ -421,27 +435,25 @@ const recordTotal = ref(0)
 
 const filters = reactive({
   timeRange: null as [number, number] | null,
-  status: [] as string[],
+  status: [] as number[],
   datasourceId: null as number | null,
   createdBy: null as number | null,
   caseName: '',
 })
 
-const statusOptions = Object.entries(STATUS_NAME)
-  .filter(([k]) => ['success', 'failed', 'running', 'retrying', 'partial_success'].includes(k))
-  .map(([value, label]) => ({ value, label }))
+const statusOptions = Object.entries(STATUS_CODE_NAME).map(([value, label]) => ({ value: Number(value), label }))
 
 const datasourceOptions = ref<Array<{ label: string; value: number }>>([])
 const memberOptions = ref<Array<{ label: string; value: number }>>([])
 
-function statusText(s: string): string {
-  return STATUS_NAME[s] ?? s
+function statusText(s: number): string {
+  return STATUS_CODE_NAME[s] ?? String(s)
 }
-function statusTagType(s: string): 'success' | 'error' | 'info' | 'warning' | 'default' {
-  if (s === 'success') return 'success'
-  if (s === 'failed' || s === 'aborted') return 'error'
-  if (s === 'partial_success') return 'warning'
-  if (s === 'running' || s === 'retrying' || s === 'submitted') return 'info'
+function statusTagType(s: number): 'success' | 'error' | 'info' | 'warning' | 'default' {
+  if (s === 2) return 'success'
+  if (s === 3 || s === 6) return 'error'
+  if (s === 5) return 'warning'
+  if (s === 0 || s === 1 || s === 4) return 'info'
   return 'default'
 }
 
@@ -462,14 +474,10 @@ const recordColumns: DataTableColumns<ExecRecord> = [
     key: 'case_name',
     width: 180,
     ellipsis: { tooltip: true },
-    render: (row) =>
-      row.case_id
-        ? h('a', { style: 'color:#a78bfa;cursor:pointer', onClick: () => openCase(row.case_id!) }, row.case_name)
-        : row.case_name,
   },
   { title: '数据源', key: 'datasource_name', width: 110 },
   { title: '主表', key: 'main_table', width: 140, ellipsis: { tooltip: true } },
-  { title: '关联表数', key: 'table_count', width: 80 },
+  { title: '关联表数', key: 'related_count', width: 80 },
   { title: '目标条数', key: 'target_count', width: 100, render: (r) => formatNumber(r.target_count) },
   { title: '实际插入', key: 'success_count', width: 100, render: (r) => formatNumber(r.success_count) },
   {
@@ -478,9 +486,9 @@ const recordColumns: DataTableColumns<ExecRecord> = [
     width: 100,
     render: (r) => h(NTag, { size: 'small', type: statusTagType(r.status) }, () => statusText(r.status)),
   },
-  { title: '耗时', key: 'duration_seconds', width: 90, render: (r) => formatDuration(r.duration_seconds) },
-  { title: '操作人', key: 'created_by_name', width: 80 },
-  { title: '执行时间', key: 'started_at', width: 160, render: (r) => formatDateTime(r.started_at) },
+  { title: '耗时', key: 'duration_ms', width: 90, render: (r) => formatDurationMs(r.duration_ms) },
+  { title: '操作人', key: 'creator_name', width: 80, render: (r) => r.creator_name ?? '-' },
+  { title: '执行时间', key: 'start_at', width: 160, render: (r) => formatDateTime(r.start_at) },
   {
     title: '操作',
     key: 'actions',
@@ -488,7 +496,7 @@ const recordColumns: DataTableColumns<ExecRecord> = [
     render: (r) =>
       h('div', { style: 'display:flex;gap:8px' }, [
         h(NButton, { text: true, size: 'small', type: 'primary', onClick: () => openDetail(r.task_no) }, () => '查看详情'),
-        ['failed', 'partial_success'].includes(r.status)
+        [3, 5].includes(r.status)
           ? h(NButton, { text: true, size: 'small', type: 'warning', onClick: () => retryTask(r.task_no) }, () => '重新执行')
           : null,
       ]),
@@ -510,7 +518,7 @@ async function loadRecords(p?: number): Promise<void> {
       created_by: filters.createdBy ?? undefined,
       case_name: filters.caseName || undefined,
     })
-    records.value = res.data.list
+    records.value = res.data.items ?? []
     recordTotal.value = res.data.total
   } finally {
     recordsLoading.value = false
@@ -518,33 +526,10 @@ async function loadRecords(p?: number): Promise<void> {
   }
 }
 
-function openCase(id: number): void {
-  window.open(`/cases/${id}`, '_self')
-}
-
 // ---------------- 执行详情抽屉 ----------------
 const drawerShow = ref(false)
 const detailLoading = ref(false)
 const detail = ref<TaskDetailData | null>(null)
-
-const tableColumns: DataTableColumns<TaskTableProgress> = [
-  { title: '表名', key: 'table_name' },
-  { title: '角色', key: 'role', width: 70, render: (r) => (r.role === 'main' ? '主表' : '关联') },
-  { title: '目标', key: 'target', width: 100, render: (r) => formatNumber(r.target) },
-  { title: '成功', key: 'success', width: 100, render: (r) => formatNumber(r.success) },
-  { title: '失败', key: 'failed', width: 80, render: (r) => formatNumber(r.failed) },
-  {
-    title: '状态',
-    key: 'status',
-    width: 90,
-    render: (r) =>
-      h(
-        NTag,
-        { size: 'small', type: r.status === 'success' ? 'success' : r.status === 'failed' ? 'error' : 'info' },
-        () => ({ pending: '等待中', running: '插入中', success: '已完成', failed: '失败' })[r.status],
-      ),
-  },
-]
 
 const batchColumns: DataTableColumns<BatchLog> = [
   { title: '批次号', key: 'batch_no', width: 80 },
@@ -556,11 +541,11 @@ const batchColumns: DataTableColumns<BatchLog> = [
     render: (r) =>
       h(
         NTag,
-        { size: 'small', type: r.status === 'success' ? 'success' : r.status === 'failed' ? 'error' : 'warning' },
-        () => ({ success: '成功', failed: '失败', retrying: '重试中' })[r.status],
+        { size: 'small', type: r.status === 1 ? 'success' : r.status === 2 ? 'error' : 'warning' },
+        () => ({ 0: '待执行', 1: '成功', 2: '失败' })[r.status as 0 | 1 | 2] ?? String(r.status),
       ),
   },
-  { title: '耗时', key: 'duration_ms', width: 90, render: (r) => `${r.duration_ms}ms` },
+  { title: '耗时', key: 'duration_ms', width: 90, render: (r) => (r.duration_ms != null ? `${r.duration_ms}ms` : '-') },
   { title: '错误信息', key: 'error_msg', ellipsis: { tooltip: true }, render: (r) => r.error_msg ?? '-' },
 ]
 
@@ -584,7 +569,9 @@ function copyError(): void {
 
 /** 重新执行（断点续传：重试失败批次） */
 async function retryTask(taskNo: string): Promise<void> {
-  await tasksApi.retryBatches(taskNo)
+  const res = await tasksApi.detail(taskNo)
+  const batchNos = res.data.batch_logs.filter((b) => b.status === 2).map((b) => b.batch_no)
+  await tasksApi.retryBatches(taskNo, { batch_nos: batchNos })
   window.$message.success('已提交重试，可在进度面板查看')
   const { useTaskProgress } = await import('@/composables/useTaskProgress')
   const { trackTask } = useTaskProgress()
@@ -613,7 +600,7 @@ onMounted(async () => {
     ])
     datasourceOptions.value = dsRes.data.map((d) => ({ label: d.name, value: d.id }))
     if (userRes) {
-      memberOptions.value = userRes.data.list.map((u) => ({ label: u.real_name, value: u.id }))
+      memberOptions.value = (userRes.data.items ?? []).map((u) => ({ label: u.real_name, value: u.id }))
     }
   } catch {
     // 下拉数据失败不阻塞页面

@@ -107,7 +107,7 @@ const pendingColumns: DataTableColumns<PendingUser> = [
   { title: '申请人', key: 'real_name', width: 110, render: (r) => `${r.real_name}（${r.username}）` },
   { title: '申请分组', key: 'group_type', width: 100, render: (r) => groupName(r.group_type) },
   { title: '申请时间', key: 'created_at', width: 150, render: (r) => formatDateTimeMin(r.created_at) },
-  { title: '申请理由', key: 'reason', ellipsis: { tooltip: true }, render: (r) => r.reason || '-' },
+  { title: '申请理由', key: 'apply_reason', ellipsis: { tooltip: true }, render: (r) => r.apply_reason || '-' },
   {
     title: '操作',
     key: 'actions',
@@ -163,7 +163,7 @@ const userColumns: DataTableColumns<AdminUserItem> = [
     ellipsis: { tooltip: true },
     render: (r) => (r.permissions?.length ? `${r.permissions.length} 项权限` : '-'),
   },
-  { title: '默认数据源', key: 'default_datasource_name', width: 110, render: (r) => r.default_datasource_name ?? '-' },
+  { title: '默认数据源', key: 'default_datasource_id', width: 110, render: (r) => r.default_datasource_id ?? '-' },
   { title: '注册时间', key: 'created_at', width: 140, render: (r) => formatDateTimeMin(r.created_at) },
   {
     title: '操作',
@@ -185,7 +185,7 @@ async function loadUsers(p?: number): Promise<void> {
   usersLoading.value = true
   try {
     const res = await usersApi.list({ page: userPage.value, page_size: userPageSize })
-    userList.value = res.data.list
+    userList.value = res.data.items ?? []
     userTotal.value = res.data.total
   } finally {
     usersLoading.value = false
@@ -239,11 +239,11 @@ async function handleSavePerms(): Promise<void> {
   permSaving.value = true
   try {
     if (permTarget.value.mode === 'approve') {
-      await usersApi.approve(permTarget.value.id, perms)
+      await usersApi.approve(permTarget.value.id, { menu_codes: perms })
       window.$message.success('已通过审批')
       loadPending()
     } else {
-      await usersApi.updatePermissions(permTarget.value.id, perms)
+      await usersApi.updatePermissions(permTarget.value.id, { menu_codes: perms })
       window.$message.success('权限已更新，立即生效')
       loadUsers()
     }
@@ -273,7 +273,7 @@ async function handleReject(): Promise<void> {
   }
   rejecting.value = true
   try {
-    await usersApi.reject(rejectTarget.value.id, rejectReason.value.trim())
+    await usersApi.reject(rejectTarget.value.id, { reject_reason: rejectReason.value.trim() })
     window.$message.success('已拒绝')
     rejectShow.value = false
     loadPending()

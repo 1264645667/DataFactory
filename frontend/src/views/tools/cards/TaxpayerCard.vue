@@ -16,7 +16,7 @@
     <template #params>
       <div class="param-row">
         <span class="param-label">类型</span>
-        <n-radio-group v-model:value="params.type" size="small">
+        <n-radio-group v-model:value="params.taxpayer_type" size="small">
           <n-radio-button value="enterprise">企业</n-radio-button>
           <n-radio-button value="personal">个人</n-radio-button>
         </n-radio-group>
@@ -28,7 +28,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.taxpayer_id }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -41,14 +41,14 @@ import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { type: 'enterprise', count: 10 },
-  async (p) => (await toolsApi.taxpayerId(p)).data.list,
+  { taxpayer_type: 'enterprise', count: 10 },
+  async (p) => (await toolsApi.taxpayerId(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.taxpayer_id).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['纳税人识别号'],
-  rows: items.value.map((i) => [i.taxpayer_id]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

@@ -46,23 +46,23 @@ import { useApiTool } from './useApiTool'
 
 const bankOptions = [
   { label: '随机', value: '' },
-  { label: '工商银行', value: 'icbc' },
-  { label: '农业银行', value: 'abc' },
-  { label: '建设银行', value: 'ccb' },
-  { label: '招商银行', value: 'cmb' },
-  { label: '中国银行', value: 'boc' },
-  { label: '交通银行', value: 'comm' },
+  { label: '中国工商银行', value: '中国工商银行' },
+  { label: '中国农业银行', value: '中国农业银行' },
+  { label: '中国建设银行', value: '中国建设银行' },
+  { label: '招商银行', value: '招商银行' },
+  { label: '中国银行', value: '中国银行' },
+  { label: '交通银行', value: '交通银行' },
 ]
 
 const { params, items, loading, generate, refill } = useApiTool(
   { bank: '', card_type: 'debit', count: 10 },
-  async (p) => (await toolsApi.bankcard(p)).data.list,
+  async (p) => (await toolsApi.bankcard(p)).data.results ?? [],
 )
 
 const copyContent = computed(() => items.value.map((i) => i.card_no).join('\n'))
 const exportData = computed(() => ({
   headers: ['银行卡号', '银行', '卡类型'],
-  rows: items.value.map((i) => [i.card_no, i.bank ?? '', i.card_type ?? '']),
+  rows: items.value.map((i) => [i.card_no, i.bank, i.card_type]),
 }))
 </script>
 

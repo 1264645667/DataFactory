@@ -26,12 +26,12 @@
     </template>
 
     <n-spin :show="!data">
-      <!-- ITERATE 遍历模式：轮次进度 -->
+      <!-- ITERATE 遍历模式：轮次进度（遍历信息平铺在进度响应上） -->
       <div v-if="isIterate" class="iterate-block">
         <div class="iterate-rounds">
-          已完成轮次：{{ data?.iterate?.finished_rounds ?? 0 }} / {{ data?.iterate?.total_rounds ?? 0 }} 轮
-          <n-tag v-if="data?.iterate?.current_value != null" size="small" class="ml-2">
-            当前值：{{ data?.iterate?.current_value }}
+          当前轮次：{{ iterate?.current_round ?? 0 }} / {{ iterate?.total_rounds ?? 0 }} 轮
+          <n-tag v-if="iterate?.current_value != null" size="small" class="ml-2">
+            当前值：{{ iterate?.current_value }}
           </n-tag>
         </div>
       </div>
@@ -94,9 +94,9 @@
         </div>
       </div>
 
-      <!-- 失败摘要 -->
-      <n-alert v-if="entry.status === 'failed' && data?.error_msg" type="error" class="mt-3" title="错误摘要">
-        {{ data.error_msg }}
+      <!-- 失败摘要（进度接口不含 error_msg，具体错误见任务详情） -->
+      <n-alert v-if="entry.status === 'failed'" type="error" class="mt-3" title="错误摘要">
+        任务执行失败，可点击「查看详情」获取具体错误信息。
       </n-alert>
 
       <!-- 底部执行参数 -->
@@ -133,7 +133,7 @@ import type { TableRunStatus } from '@/api/types'
 const props = defineProps<{ taskNo: string }>()
 
 const router = useRouter()
-const { store, minimize, closeTerminal, abortTask } = useTaskProgress()
+const { store, minimize, closeTerminal, abortTask, isIterateTask, iterateProgress } = useTaskProgress()
 
 const entry = computed(() => store.tasks.get(props.taskNo)!)
 const data = computed(() => entry.value?.data ?? null)
@@ -142,7 +142,8 @@ const percent = computed(() => Math.min(100, Math.round(overall.value?.progress_
 const isTerminal = computed(() =>
   ['success', 'failed', 'partial_success', 'aborted'].includes(entry.value?.status ?? ''),
 )
-const isIterate = computed(() => data.value?.mode === 'ITERATE')
+const isIterate = computed(() => isIterateTask(data.value))
+const iterate = computed(() => iterateProgress(data.value))
 const aborting = ref(false)
 
 // 标题随状态变化

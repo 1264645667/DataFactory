@@ -48,7 +48,7 @@
       :main-table="executingCase?.main_table ?? ''"
       :related-tables="executingRelated"
       :iterate-info="executingIterate"
-      :initial-name="executingCase?.name ?? ''"
+      :initial-name="executingCase?.case_name ?? ''"
       name-readonly
       :submitting="executing"
       @confirm="handleExecute"
@@ -93,7 +93,7 @@
           <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="{ pageSize: 10 }" />
           <EmptyState v-if="!historyLoading && historyList.length === 0" description="还没有执行记录" />
           <div v-if="historyList.length > 0" class="history-stats">
-            总执行 {{ historyList.length }} 次 · 成功 {{ historyList.filter((h) => h.status === 'success').length }} 次 ·
+            总执行 {{ historyList.length }} 次 · 成功 {{ historyList.filter((h) => h.status === 2).length }} 次 ·
             累计造数 {{ formatNumber(historyList.reduce((s, h) => s + (h.success_count ?? 0), 0)) }} 条
           </div>
         </n-spin>
@@ -109,12 +109,12 @@ import { NButton, NTag, type DataTableColumns } from 'naive-ui'
 import { casesApi } from '@/api/cases'
 import { datasourceApi } from '@/api/datasource'
 import { usersApi } from '@/api/users'
-import type { CaseHistoryItem, CaseItem } from '@/api/types'
+import type { CaseHistoryItem, CaseItem, ExecStatusCode, LastExecStatusCode } from '@/api/types'
 import ExecuteModal from '@/components/business/ExecuteModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
-import { formatDateTimeMin, formatDuration, formatNumber } from '@/utils/formatter'
+import { formatDateTimeMin, formatDurationMs, formatNumber } from '@/utils/formatter'
 
 const router = useRouter()
 const { hasPermission } = useAuth()
@@ -133,7 +133,7 @@ const filters = reactive({
   datasourceId: null as number | null,
   name: '',
   createdBy: null as number | null,
-  status: [] as string[],
+  status: [] as number[],
   timeRange: null as [number, number] | null,
 })
 
@@ -143,36 +143,57 @@ const hasFilter = computed(
 
 const datasourceOptions = ref<Array<{ label: string; value: number }>>([])
 const memberOptions = ref<Array<{ label: string; value: number }>>([])
+// 最后执行状态摘要码：0未执行 1成功 2失败 3部分成功
 const statusOptions = [
-  { label: '成功', value: 'success' },
-  { label: '失败', value: 'failed' },
-  { label: '未执行', value: 'none' },
+  { label: '成功', value: 1 },
+  { label: '失败', value: 2 },
+  { label: '未执行', value: 0 },
 ]
 
-function statusTag(status: string | null) {
-  if (!status) return h(NTag, { size: 'small' }, () => '未执行')
-  const type = status === 'success' ? 'success' : status === 'partial_success' ? 'warning' : status === 'running' ? 'info' : 'error'
-  const text = { success: '成功', failed: '失败', partial_success: '部分成功', running: '执行中', aborted: '已中止' }[status] ?? status
-  return h(NTag, { size: 'small', type: type as 'success' | 'warning' | 'info' | 'error' }, () => text)
+/** Case 列表「最后执行状态」标签（摘要码 0~3） */
+function statusTag(status: LastExecStatusCode | null) {
+  const map: Record<number, { text: string; type: 'default' | 'success' | 'error' | 'warning' }> = {
+    0: { text: '未执行', type: 'default' },
+    1: { text: '成功', type: 'success' },
+    2: { text: '失败', type: 'error' },
+    3: { text: '部分成功', type: 'warning' },
+  }
+  const s = map[status ?? 0] ?? map[0]!
+  return h(NTag, { size: 'small', type: s.type }, () => s.text)
+}
+
+/** 执行历史状态标签（完整码 0~6）：0待执行 1执行中 2成功 3失败 4重试中 5部分成功 6已中止 */
+function execStatusTag(status: ExecStatusCode) {
+  const map: Record<number, { text: string; type: 'default' | 'success' | 'error' | 'warning' | 'info' }> = {
+    0: { text: '待执行', type: 'default' },
+    1: { text: '执行中', type: 'info' },
+    2: { text: '成功', type: 'success' },
+    3: { text: '失败', type: 'error' },
+    4: { text: '重试中', type: 'warning' },
+    5: { text: '部分成功', type: 'warning' },
+    6: { text: '已中止', type: 'default' },
+  }
+  const s = map[status] ?? { text: String(status), type: 'default' as const }
+  return h(NTag, { size: 'small', type: s.type }, () => s.text)
 }
 
 const columns: DataTableColumns<CaseItem> = [
   { type: 'selection' },
   {
     title: 'Case 名称',
-    key: 'name',
+    key: 'case_name',
     width: 200,
     render: (row) =>
       h(
         'a',
         { style: 'color:#a78bfa;cursor:pointer;font-weight:600', onClick: () => router.push(`/cases/${row.id}`) },
-        row.name,
+        row.case_name,
       ),
   },
   { title: '数据源', key: 'datasource_name', width: 120 },
   { title: '主表', key: 'main_table', width: 150, ellipsis: { tooltip: true } },
-  { title: '关联表数', key: 'related_table_count', width: 80 },
-  { title: '创建人', key: 'created_by_name', width: 80 },
+  { title: '关联表数', key: 'related_count', width: 80 },
+  { title: '创建人', key: 'creator_name', width: 80 },
   { title: '创建时间', key: 'created_at', width: 140, render: (r) => formatDateTimeMin(r.created_at) },
   {
     title: '最后执行时间',
@@ -226,8 +247,8 @@ async function loadList(p?: number): Promise<void> {
       start_time: start ? new Date(start).toISOString() : undefined,
       end_time: end ? new Date(end).toISOString() : undefined,
     })
-    list.value = res.data.list
-    total.value = res.data.total
+    list.value = res.data.items ?? []
+    total.value = res.data.total ?? 0
     selectedIds.value = []
   } finally {
     loading.value = false
@@ -254,7 +275,7 @@ const executingIterate = ref<{ field: string; values: string[]; rowsPerValue: nu
 async function openExecute(row: CaseItem): Promise<void> {
   // 拉取 Case 详情展示配置摘要
   const res = await casesApi.detail(row.id)
-  const cfg = res.data.config_json
+  const cfg = res.data.config
   executingCase.value = row
   executingRelated.value = [...new Set(cfg.associations.map((a) => a.target_table))]
   const iterateField = cfg.field_configs.find((f) => f.strategy === 'ITERATE_LIST')
@@ -290,7 +311,7 @@ const copyTarget = ref<CaseItem | null>(null)
 
 function openCopy(row: CaseItem): void {
   copyTarget.value = row
-  copyName.value = `${row.name}_copy`
+  copyName.value = `${row.case_name}_copy`
   copyShow.value = true
 }
 
@@ -314,7 +335,7 @@ async function handleCopy(): Promise<void> {
 function handleDelete(row: CaseItem): void {
   window.$dialog.warning({
     title: '确认删除',
-    content: `确认删除 Case「${row.name}」？删除后不可恢复，历史执行记录将保留。`,
+    content: `确认删除 Case「${row.case_name}」？删除后不可恢复，历史执行记录将保留。`,
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -348,7 +369,7 @@ const uniformCount = ref<number | null>(null)
 function openBatchExecute(): void {
   batchItems.value = list.value
     .filter((c) => selectedIds.value.includes(c.id))
-    .map((c) => ({ case_id: c.id, name: c.name, target_count: 1000 }))
+    .map((c) => ({ case_id: c.id, name: c.case_name, target_count: 1000 }))
   batchShow.value = true
 }
 
@@ -367,10 +388,9 @@ async function handleBatchExecute(): Promise<void> {
   try {
     const res = await casesApi.batchExecute(batchItems.value.map((i) => ({ case_id: i.case_id, target_count: i.target_count! })))
     batchShow.value = false
-    // 每个 Case 生成独立任务，全部纳入进度管理
-    res.data.tasks.forEach((t) => {
-      const item = batchItems.value.find((i) => i.case_id === t.case_id)
-      trackTask(t.task_no, item?.name ?? '')
+    // 每个 Case 生成独立任务（task_nos 与请求 items 同序），全部纳入进度管理
+    res.data.task_nos.forEach((taskNo, idx) => {
+      trackTask(taskNo, batchItems.value[idx]?.name ?? '')
     })
   } finally {
     batchExecuting.value = false
@@ -384,11 +404,11 @@ const historyList = ref<CaseHistoryItem[]>([])
 const historyCaseName = ref('')
 
 const historyColumns: DataTableColumns<CaseHistoryItem> = [
-  { title: '执行时间', key: 'started_at', width: 160, render: (r) => formatDateTimeMin(r.started_at) },
+  { title: '执行时间', key: 'start_at', width: 160, render: (r) => formatDateTimeMin(r.start_at) },
   { title: '造数条数', key: 'target_count', width: 110, render: (r) => formatNumber(r.target_count) },
   { title: '实际插入', key: 'success_count', width: 110, render: (r) => formatNumber(r.success_count) },
-  { title: '状态', key: 'status', width: 100, render: (r) => statusTag(r.status) },
-  { title: '耗时', key: 'duration_seconds', width: 90, render: (r) => formatDuration(r.duration_seconds) },
+  { title: '状态', key: 'status', width: 100, render: (r) => execStatusTag(r.status) },
+  { title: '耗时', key: 'duration_ms', width: 90, render: (r) => formatDurationMs(r.duration_ms) },
   {
     title: '操作',
     key: 'actions',
@@ -398,12 +418,12 @@ const historyColumns: DataTableColumns<CaseHistoryItem> = [
 ]
 
 async function openHistory(row: CaseItem): Promise<void> {
-  historyCaseName.value = row.name
+  historyCaseName.value = row.case_name
   historyShow.value = true
   historyLoading.value = true
   try {
-    const res = await casesApi.history(row.id, { page: 1, page_size: 50 })
-    historyList.value = res.data.list
+    const res = await casesApi.history(row.id)
+    historyList.value = res.data.items ?? []
   } finally {
     historyLoading.value = false
   }
@@ -417,7 +437,7 @@ onMounted(async () => {
       usersApi.list({ page: 1, page_size: 100 }).catch(() => null),
     ])
     datasourceOptions.value = dsRes.data.map((d) => ({ label: d.name, value: d.id }))
-    if (userRes) memberOptions.value = userRes.data.list.map((u) => ({ label: u.real_name, value: u.id }))
+    if (userRes) memberOptions.value = (userRes.data.items ?? []).map((u) => ({ label: u.real_name, value: u.id }))
   } catch {
     // 下拉数据失败不阻塞页面
   }

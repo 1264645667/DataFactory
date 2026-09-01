@@ -31,9 +31,7 @@ export function useDatasource() {
       const res = await datasourceApi.status(id)
       const target = dsStore.list.find((d) => d.id === id)
       if (target) {
-        target.status = res.data.status
-        target.cache_status = res.data.cache_status
-        target.last_sync_at = res.data.last_sync_at
+        target.online = res.data.online
       }
     } catch {
       // 心跳失败静默

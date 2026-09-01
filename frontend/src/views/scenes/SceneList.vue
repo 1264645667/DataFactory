@@ -47,7 +47,7 @@
     <n-modal v-model:show="executeShow" preset="card" title="准备执行场景" style="width: 560px">
       <n-spin :show="planLoading">
         <n-descriptions :column="2" size="small" label-placement="left">
-          <n-descriptions-item label="场景名称">{{ executingScene?.name }}</n-descriptions-item>
+          <n-descriptions-item label="场景名称">{{ executingScene?.scene_name }}</n-descriptions-item>
           <n-descriptions-item label="节点数量">{{ planLayers.flat().length }} 个 Case</n-descriptions-item>
         </n-descriptions>
         <div class="plan-preview">
@@ -104,12 +104,12 @@ import { useRouter } from 'vue-router'
 import { NButton, NTag, type DataTableColumns } from 'naive-ui'
 import { scenesApi } from '@/api/scenes'
 import { usersApi } from '@/api/users'
-import type { SceneHistoryItem, SceneItem, SceneNode, SceneStatus } from '@/api/types'
+import type { SceneHistoryItem, SceneItem, SceneLastExecStatusCode, SceneNode } from '@/api/types'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSceneProgress } from '@/composables/useSceneProgress'
 import { buildLayers } from '@/utils/dag'
-import { formatDateTimeMin, formatDuration, formatNumber } from '@/utils/formatter'
+import { formatDateTimeMin, formatDurationMs, formatNumber } from '@/utils/formatter'
 
 const router = useRouter()
 const { hasPermission } = useAuth()
@@ -126,31 +126,47 @@ const selectedIds = ref<number[]>([])
 const filters = reactive({
   name: '',
   createdBy: null as number | null,
-  status: [] as string[],
+  status: [] as number[],
   timeRange: null as [number, number] | null,
 })
 
 const hasFilter = computed(() => !!(filters.name || filters.createdBy || filters.status.length || filters.timeRange))
 const memberOptions = ref<Array<{ label: string; value: number }>>([])
+// 最后执行状态摘要码：0未执行 1成功 2失败 3部分成功 4已中止
 const statusOptions = [
-  { label: '成功', value: 'success' },
-  { label: '失败', value: 'failed' },
-  { label: '部分成功', value: 'partial_success' },
-  { label: '未执行', value: 'none' },
+  { label: '未执行', value: 0 },
+  { label: '成功', value: 1 },
+  { label: '失败', value: 2 },
+  { label: '部分成功', value: 3 },
+  { label: '已中止', value: 4 },
 ]
 
 const EXEC_MODE_TEXT: Record<string, string> = { serial: '纯串行', parallel: '含并行', mixed: '混合' }
 
-function statusTag(status: SceneStatus | null) {
-  if (!status) return h(NTag, { size: 'small' }, () => '未执行')
-  const map: Record<string, { type: 'success' | 'warning' | 'info' | 'error'; text: string }> = {
-    success: { type: 'success', text: '成功' },
-    failed: { type: 'error', text: '失败' },
-    partial_success: { type: 'warning', text: '部分成功' },
-    running: { type: 'info', text: '执行中' },
-    aborted: { type: 'error', text: '已中止' },
+/** 场景列表「最后执行状态」摘要码 0~4 */
+function statusTag(status: SceneLastExecStatusCode | null) {
+  if (status == null || status === 0) return h(NTag, { size: 'small' }, () => '未执行')
+  const map: Record<number, { type: 'success' | 'warning' | 'info' | 'error'; text: string }> = {
+    1: { type: 'success', text: '成功' },
+    2: { type: 'error', text: '失败' },
+    3: { type: 'warning', text: '部分成功' },
+    4: { type: 'error', text: '已中止' },
   }
-  const s = map[status] ?? { type: 'info' as const, text: status }
+  const s = map[status] ?? { type: 'info' as const, text: String(status) }
+  return h(NTag, { size: 'small', type: s.type }, () => s.text)
+}
+
+/** 场景执行历史状态码：0待执行 1执行中 2成功 3失败 4部分成功 5已中止 */
+function historyStatusTag(status: number) {
+  const map: Record<number, { type: 'success' | 'warning' | 'info' | 'error' | 'default'; text: string }> = {
+    0: { type: 'default', text: '待执行' },
+    1: { type: 'info', text: '执行中' },
+    2: { type: 'success', text: '成功' },
+    3: { type: 'error', text: '失败' },
+    4: { type: 'warning', text: '部分成功' },
+    5: { type: 'error', text: '已中止' },
+  }
+  const s = map[status] ?? { type: 'default' as const, text: String(status) }
   return h(NTag, { size: 'small', type: s.type }, () => s.text)
 }
 
@@ -158,14 +174,14 @@ const columns: DataTableColumns<SceneItem> = [
   { type: 'selection' },
   {
     title: '场景名称',
-    key: 'name',
+    key: 'scene_name',
     width: 200,
     render: (row) =>
-      h('a', { style: 'color:#a78bfa;cursor:pointer;font-weight:600', onClick: () => router.push(`/scenes/${row.id}`) }, row.name),
+      h('a', { style: 'color:#a78bfa;cursor:pointer;font-weight:600', onClick: () => router.push(`/scenes/${row.id}`) }, row.scene_name),
   },
   { title: '包含 Case 数', key: 'node_count', width: 100 },
   { title: '执行模式', key: 'exec_mode', width: 100, render: (r) => EXEC_MODE_TEXT[r.exec_mode] ?? r.exec_mode },
-  { title: '创建人', key: 'created_by_name', width: 80 },
+  { title: '创建人', key: 'creator_name', width: 80 },
   { title: '创建时间', key: 'created_at', width: 140, render: (r) => formatDateTimeMin(r.created_at) },
   {
     title: '最后执行时间',
@@ -212,7 +228,7 @@ async function loadList(p?: number): Promise<void> {
       start_time: start ? new Date(start).toISOString() : undefined,
       end_time: end ? new Date(end).toISOString() : undefined,
     })
-    list.value = res.data.list
+    list.value = res.data.items ?? []
     total.value = res.data.total
     selectedIds.value = []
   } finally {
@@ -243,8 +259,8 @@ async function openExecute(row: SceneItem): Promise<void> {
   planLoading.value = true
   try {
     const res = await scenesApi.detail(row.id)
-    const nodes = res.data.nodes_json
-    const edges = res.data.edges_json
+    const nodes = res.data.nodes
+    const edges = res.data.edges
     const layers = buildLayers(nodes.map((n) => n.node_id), edges)
     planLayers.value = layers.map((layer) => layer.map((id) => nodes.find((n) => n.node_id === id)!).filter(Boolean))
   } catch (e) {
@@ -260,7 +276,7 @@ async function handleExecute(): Promise<void> {
   try {
     const res = await scenesApi.execute(executingScene.value.id)
     executeShow.value = false
-    trackScene(res.data.scene_exec_no, executingScene.value.name)
+    trackScene(res.data.scene_exec_no, executingScene.value.scene_name)
     loadList()
   } finally {
     executing.value = false
@@ -275,7 +291,7 @@ const copyTarget = ref<SceneItem | null>(null)
 
 function openCopy(row: SceneItem): void {
   copyTarget.value = row
-  copyName.value = `${row.name}_copy`
+  copyName.value = `${row.scene_name}_copy`
   copyShow.value = true
 }
 
@@ -296,7 +312,7 @@ async function handleCopy(): Promise<void> {
 function handleDelete(row: SceneItem): void {
   window.$dialog.warning({
     title: '确认删除',
-    content: `确认删除场景「${row.name}」？删除后不可恢复，历史执行记录将保留。`,
+    content: `确认删除场景「${row.scene_name}」？删除后不可恢复，历史执行记录将保留。`,
     positiveText: '确认删除',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -329,23 +345,22 @@ const historySceneName = ref('')
 
 const historyColumns: DataTableColumns<SceneHistoryItem> = [
   { title: '执行编号', key: 'scene_exec_no', width: 160 },
-  { title: '执行时间', key: 'started_at', width: 140, render: (r) => formatDateTimeMin(r.started_at) },
+  { title: '执行时间', key: 'start_at', width: 140, render: (r) => formatDateTimeMin(r.start_at) },
   { title: '节点数', key: 'node_count', width: 70 },
-  { title: '成功节点', key: 'success_nodes', width: 80 },
-  { title: '失败节点', key: 'fail_nodes', width: 80 },
+  { title: '成功节点', key: 'success_count', width: 80 },
+  { title: '失败节点', key: 'fail_count', width: 80 },
   { title: '总造数条数', key: 'total_rows', width: 110, render: (r) => formatNumber(r.total_rows) },
-  { title: '状态', key: 'status', width: 100, render: (r) => statusTag(r.status) },
-  { title: '耗时', key: 'duration_seconds', width: 80, render: (r) => formatDuration(r.duration_seconds) },
-  { title: '操作人', key: 'created_by_name', width: 80 },
+  { title: '状态', key: 'status', width: 100, render: (r) => historyStatusTag(r.status) },
+  { title: '耗时', key: 'duration_ms', width: 80, render: (r) => formatDurationMs(r.duration_ms) },
 ]
 
 async function openHistory(row: SceneItem): Promise<void> {
-  historySceneName.value = row.name
+  historySceneName.value = row.scene_name
   historyShow.value = true
   historyLoading.value = true
   try {
-    const res = await scenesApi.history(row.id, { page: 1, page_size: 50 })
-    historyList.value = res.data.list
+    const res = await scenesApi.history(row.id)
+    historyList.value = res.data ?? []
   } finally {
     historyLoading.value = false
   }
@@ -355,7 +370,7 @@ onMounted(async () => {
   loadList(1)
   try {
     const userRes = await usersApi.list({ page: 1, page_size: 100 }).catch(() => null)
-    if (userRes) memberOptions.value = userRes.data.list.map((u) => ({ label: u.real_name, value: u.id }))
+    if (userRes) memberOptions.value = (userRes.data.items ?? []).map((u) => ({ label: u.real_name, value: u.id }))
   } catch {
     // 忽略
   }

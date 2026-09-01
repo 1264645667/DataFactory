@@ -9,11 +9,8 @@
         网络连接已断开，部分功能不可用
       </n-alert>
       <div class="app-content">
-        <router-view v-slot="{ Component }">
-          <transition name="fade-slide" mode="out-in">
-            <component :is="Component" />
-          </transition>
-        </router-view>
+        <!-- key 绑定路由路径确保组件重新渲染 -->
+        <router-view :key="route.path" />
       </div>
     </div>
 
@@ -32,6 +29,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import SideBar from './SideBar.vue'
 import TopBar from './TopBar.vue'
 import TaskProgressPanel from '@/components/common/TaskProgressPanel.vue'
@@ -40,6 +38,7 @@ import TaskFloatBall from '@/components/common/TaskFloatBall.vue'
 import { useTaskProgressStore } from '@/stores/taskProgress'
 import { useSceneProgressStore } from '@/stores/sceneProgress'
 
+const route = useRoute()
 const taskStore = useTaskProgressStore()
 const sceneStore = useSceneProgressStore()
 

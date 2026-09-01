@@ -21,9 +21,9 @@
       <div class="param-row">
         <span class="param-label">精度</span>
         <n-radio-group v-model:value="params.precision" size="small">
-          <n-radio-button value="city">省市</n-radio-button>
-          <n-radio-button value="district">省市区</n-radio-button>
-          <n-radio-button value="street">省市区街道+门牌号</n-radio-button>
+          <n-radio-button value="province_city">省市</n-radio-button>
+          <n-radio-button value="province_city_district">省市区</n-radio-button>
+          <n-radio-button value="full">省市区街道+门牌号</n-radio-button>
         </n-radio-group>
       </div>
       <div class="param-row">
@@ -33,7 +33,7 @@
     </template>
     <template #result>
       <div class="result-list-col">
-        <div v-for="(item, i) in items" :key="i" class="result-line">{{ item.address }}</div>
+        <div v-for="(item, i) in items" :key="i" class="result-line">{{ item }}</div>
       </div>
     </template>
   </ToolCardBase>
@@ -49,14 +49,14 @@ const PROVINCES = ['不限', '北京', '天津', '河北', '山西', '内蒙古'
 const provinceOptions = PROVINCES.map((p) => ({ label: p, value: p === '不限' ? '' : p }))
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { province: '', precision: 'street', count: 10 },
-  async (p) => (await toolsApi.address(p)).data.list,
+  { province: '', precision: 'full' as 'province_city' | 'province_city_district' | 'full', count: 10 },
+  async (p) => (await toolsApi.address(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.address).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['地址'],
-  rows: items.value.map((i) => [i.address]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

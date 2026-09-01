@@ -276,14 +276,17 @@ async def _get_user_or_404(db: AsyncSession, user_id: int) -> User:
     return user
 
 
-async def _replace_user_menus(db: AsyncSession, user_id: int, menu_ids: list[int]) -> list[str]:
-    """重建用户菜单关联，返回权限编码列表。menu_ids 中的非法 ID 抛 1000。"""
-    menu_codes: list[str] = []
-    if menu_ids:
-        result = await db.execute(select(Menu).where(Menu.id.in_(menu_ids)))
+async def _replace_user_menus(db: AsyncSession, user_id: int, menu_codes: list[str]) -> list[str]:
+    """按权限编码重建用户菜单关联，返回规范化的权限编码列表。非法编码抛 1000。"""
+    menu_ids: list[int] = []
+    if menu_codes:
+        result = await db.execute(select(Menu).where(Menu.menu_code.in_(menu_codes)))
         menus = list(result.scalars().all())
-        if len(menus) != len(set(menu_ids)):
-            raise BizException(PARAM_INVALID, "存在无效的菜单权限 ID")
+        if len(menus) != len(set(menu_codes)):
+            raise BizException(PARAM_INVALID, "存在无效的菜单权限编码")
+        # 按 sort_order 稳定排序，保持返回编码顺序一致
+        menus.sort(key=lambda m: m.sort_order)
+        menu_ids = [menu.id for menu in menus]
         menu_codes = [menu.menu_code for menu in menus]
     # 先删后插（覆盖式）
     await db.execute(sql_delete(UserMenu).where(UserMenu.user_id == user_id))
@@ -315,7 +318,7 @@ async def approve_user(
     *,
     operator: User,
     target_user_id: int,
-    menu_ids: list[int],
+    menu_codes: list[str],
     ip: str | None,
 ) -> None:
     """审批通过：分配权限 + APPLY_APPROVED 通知 + 审计（PRD 2.2）。"""
@@ -444,12 +447,12 @@ async def update_user_permissions(
     *,
     operator: User,
     target_user_id: int,
-    menu_ids: list[int],
+    menu_codes: list[str],
     ip: str | None,
 ) -> None:
     """更新用户菜单权限（保存后立即生效）+ PERMISSION_CHANGED 通知 + 审计。"""
     target = await _get_user_or_404(db, target_user_id)
-    menu_codes = await _replace_user_menus(db, target_user_id, menu_ids)
+    menu_codes = await _replace_user_menus(db, target_user_id, menu_codes)
     await notify(
         db,
         user_id=target.id,

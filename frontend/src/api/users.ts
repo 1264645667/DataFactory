@@ -14,20 +14,20 @@ export const usersApi = {
     return request.get<unknown, ApiResponse<PendingUser[]>>('/v1/users/pending')
   },
   /** 审批通过并分配权限 */
-  approve(id: number, permissions: string[]) {
-    return request.post<unknown, ApiResponse<null>>(`/v1/users/${id}/approve`, { permissions })
+  approve(id: number, body: { menu_codes: string[] }) {
+    return request.post<unknown, ApiResponse<null>>(`/v1/users/${id}/approve`, body)
   },
   /** 审批拒绝（必填原因） */
-  reject(id: number, reason: string) {
-    return request.post<unknown, ApiResponse<null>>(`/v1/users/${id}/reject`, { reason })
+  reject(id: number, body: { reject_reason: string }) {
+    return request.post<unknown, ApiResponse<null>>(`/v1/users/${id}/reject`, body)
   },
   /** 全部用户列表（分页） */
   list(params: { page?: number; page_size?: number; keyword?: string }) {
     return request.get<unknown, ApiResponse<PageResult<AdminUserItem>>>('/v1/users', { params })
   },
   /** 更新用户菜单权限 */
-  updatePermissions(id: number, permissions: string[]) {
-    return request.put<unknown, ApiResponse<null>>(`/v1/users/${id}/permissions`, { permissions })
+  updatePermissions(id: number, body: { menu_codes: string[] }) {
+    return request.put<unknown, ApiResponse<null>>(`/v1/users/${id}/permissions`, body)
   },
   /** 禁用用户 */
   disable(id: number) {
@@ -49,8 +49,8 @@ export const usersApi = {
     })
   },
   /** 更新头像序号 */
-  updateAvatar(avatar: number) {
-    return request.put<unknown, ApiResponse<null>>('/v1/users/me/avatar', { avatar })
+  updateAvatar(avatarIndex: number) {
+    return request.put<unknown, ApiResponse<null>>('/v1/users/me/avatar', { avatar_index: avatarIndex })
   },
   /** 设置默认数据源 */
   setDefaultDatasource(datasourceId: number | null) {
@@ -58,16 +58,14 @@ export const usersApi = {
       datasource_id: datasourceId,
     })
   },
-  /** 查询操作日志（普通用户看本组，管理员看全量） */
+  /** 查询操作日志（普通用户看本组，管理员看全量；后端返回纯数组不分页） */
   auditLogs(params: {
-    page?: number
-    page_size?: number
-    operator?: string
+    username?: string
     action?: string
     group_type?: number
     start_time?: string
     end_time?: string
   }) {
-    return request.get<unknown, ApiResponse<PageResult<AuditLogItem>>>('/v1/users/audit-logs', { params })
+    return request.get<unknown, ApiResponse<AuditLogItem[]>>('/v1/users/audit-logs', { params })
   },
 }

@@ -125,9 +125,9 @@ class SnowflakeGenerateRequest(BaseModel):
 
 
 class SnowflakeItem(BaseModel):
-    """雪花 ID 及解析信息。"""
+    """雪花 ID 及解析信息。id 用字符串承载，避免 64 位整数在 JS 中精度丢失。"""
 
-    id: int
+    id: str
     timestamp: int
     machine_id: int
     datacenter_id: int

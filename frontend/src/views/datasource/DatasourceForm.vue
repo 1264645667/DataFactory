@@ -6,7 +6,7 @@
         <n-input v-model:value="form.name" placeholder="1~50 字，全局唯一" />
       </n-form-item>
       <n-form-item label="数据库类型" path="db_type">
-        <n-select v-model:value="form.db_type" :options="[{ label: 'MySQL', value: 'mysql' }]" disabled />
+        <n-select v-model:value="form.db_type" :options="[{ label: 'MySQL', value: 'MySQL' }]" disabled />
       </n-form-item>
       <n-form-item label="Host" path="host">
         <n-input v-model:value="form.host" placeholder="合法 IP 或域名" />
@@ -14,8 +14,8 @@
       <n-form-item label="Port" path="port">
         <n-input-number v-model:value="form.port" :min="1" :max="65535" style="width: 160px" />
       </n-form-item>
-      <n-form-item label="Database" path="database">
-        <n-input v-model:value="form.database" placeholder="数据库名" />
+      <n-form-item label="Database" path="database_name">
+        <n-input v-model:value="form.database_name" placeholder="数据库名" />
       </n-form-item>
       <n-form-item label="用户名" path="username">
         <n-input v-model:value="form.username" placeholder="数据库用户名" />
@@ -89,10 +89,10 @@ const isEdit = computed(() => !!props.datasource)
 
 const form = reactive<DatasourceForm>({
   name: '',
-  db_type: 'mysql',
+  db_type: 'MySQL',
   host: '',
   port: 3306,
-  database: '',
+  database_name: '',
   username: '',
   password: '',
   group_type: 1,
@@ -113,7 +113,7 @@ const rules: FormRules = {
     },
   ],
   port: [{ required: true, type: 'number', message: '请输入端口', trigger: ['input', 'blur'] }],
-  database: [{ required: true, message: '请输入数据库名', trigger: ['input', 'blur'] }],
+  database_name: [{ required: true, message: '请输入数据库名', trigger: ['input', 'blur'] }],
   username: [{ required: true, message: '请输入用户名', trigger: ['input', 'blur'] }],
   password: [
     {
@@ -138,7 +138,7 @@ watch(
         db_type: d.db_type,
         host: d.host,
         port: d.port,
-        database: d.database,
+        database_name: d.database_name,
         username: d.username,
         password: '',
         group_type: d.group_type,
@@ -147,10 +147,10 @@ watch(
     } else {
       Object.assign(form, {
         name: '',
-        db_type: 'mysql',
+        db_type: 'MySQL',
         host: '',
         port: 3306,
-        database: '',
+        database_name: '',
         username: '',
         password: '',
         group_type: user.value?.group_type === 2 ? 2 : 1,
@@ -164,13 +164,22 @@ function close(): void {
   emit('update:show', false)
 }
 
-/** 测试连接：显示数据库版本或错误详情 */
+/** 测试连接：显示数据库版本或错误详情（后端失败时 code=0 但 success=false） */
 async function handleTest(): Promise<void> {
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return
+  }
   testing.value = true
   testResult.value = null
   try {
     const res = await datasourceApi.test({ ...form })
-    testResult.value = { ok: true, text: `连接成功，数据库版本：${res.data.version ?? 'MySQL'}` }
+    if (res.data.success) {
+      testResult.value = { ok: true, text: res.data.message }
+    } else {
+      testResult.value = { ok: false, text: res.data.message }
+    }
   } catch (e) {
     testResult.value = { ok: false, text: (e as Error).message || '连接失败' }
   } finally {

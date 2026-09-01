@@ -149,7 +149,7 @@ async function handleSaveDs(): Promise<void> {
 
 // ---------------- 头像设置 ----------------
 const AVATAR_COLORS = ['#a78bfa', '#f472b6', '#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#c084fc', '#f97316', '#4ade80']
-const avatar = ref(authStore.user?.avatar ?? 0)
+const avatar = ref(authStore.user?.avatar_index ?? 1)
 const avatarSaving = ref(false)
 
 async function handleSaveAvatar(): Promise<void> {
@@ -191,12 +191,15 @@ const logColumns: DataTableColumns<AuditLogItem> = [
   { title: '操作时间', key: 'created_at', width: 165, render: (r) => formatDateTime(r.created_at) },
   {
     title: '操作人',
-    key: 'operator_name',
+    key: 'username',
     width: 130,
-    render: (r) => (isAdmin.value && r.group_type ? `${r.operator_name}（${groupName(r.group_type)}）` : r.operator_name),
+    render: (r) => {
+      const name = r.real_name || r.username
+      return isAdmin.value && r.group_type ? `${name}（${groupName(r.group_type)}）` : name
+    },
   },
   { title: '操作类型', key: 'action', width: 110 },
-  { title: '操作对象', key: 'target', width: 190, ellipsis: { tooltip: true } },
+  { title: '操作对象', key: 'resource', width: 190, ellipsis: { tooltip: true } },
   {
     title: '操作详情',
     key: 'detail',
@@ -229,16 +232,17 @@ async function loadLogs(p?: number): Promise<void> {
   try {
     const [start, end] = logFilters.timeRange ?? [null, null]
     const res = await usersApi.auditLogs({
-      page: logPage.value,
-      page_size: logPageSize,
-      operator: logFilters.operator || undefined,
+      username: logFilters.operator || undefined,
       action: logFilters.action ?? undefined,
       group_type: logFilters.groupType ?? undefined,
       start_time: start ? new Date(start).toISOString() : undefined,
       end_time: end ? new Date(end).toISOString() : undefined,
     })
-    logs.value = res.data.list
-    logTotal.value = res.data.total
+    // 后端返回纯数组不分页，前端切片展示
+    const all = res.data ?? []
+    logTotal.value = all.length
+    const begin = (logPage.value - 1) * logPageSize
+    logs.value = all.slice(begin, begin + logPageSize)
   } finally {
     logsLoading.value = false
   }

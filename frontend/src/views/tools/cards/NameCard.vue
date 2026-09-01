@@ -17,7 +17,7 @@
     <template #params>
       <div class="param-row">
         <span class="param-label">语言</span>
-        <n-radio-group v-model:value="params.lang" size="small">
+        <n-radio-group v-model:value="params.language" size="small">
           <n-radio-button value="zh">中文</n-radio-button>
           <n-radio-button value="en">英文</n-radio-button>
         </n-radio-group>
@@ -37,7 +37,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.name }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -50,14 +50,14 @@ import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { lang: 'zh', gender: 'random', count: 10 },
-  async (p) => (await toolsApi.name(p)).data.list,
+  { language: 'zh', gender: 'random', count: 10 },
+  async (p) => (await toolsApi.name(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.name).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['姓名'],
-  rows: items.value.map((i) => [i.name]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

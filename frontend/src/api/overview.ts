@@ -6,9 +6,9 @@ import type {
   MemberRankItem,
   OverviewMetrics,
   PageResult,
-  StatusDistItem,
+  StatusDistResult,
   TableTopItem,
-  TrendPoint,
+  TrendResult,
 } from './types'
 
 // 造数总览模块 /api/v1/overview
@@ -19,11 +19,11 @@ export const overviewApi = {
   },
   /** 执行趋势折线图数据（近 7/30/90 天） */
   trend(days: 7 | 30 | 90) {
-    return request.get<unknown, ApiResponse<TrendPoint[]>>('/v1/overview/trend', { params: { days } })
+    return request.get<unknown, ApiResponse<TrendResult>>('/v1/overview/trend', { params: { days } })
   },
   /** 执行状态分布饼图数据 */
   statusDist(days: 7 | 30 | 90) {
-    return request.get<unknown, ApiResponse<StatusDistItem[]>>('/v1/overview/status-dist', { params: { days } })
+    return request.get<unknown, ApiResponse<StatusDistResult>>('/v1/overview/status-dist', { params: { days } })
   },
   /** 表操作量 Top10 柱状图数据 */
   tableTop10(days?: number) {

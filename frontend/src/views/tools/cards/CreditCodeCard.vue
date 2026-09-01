@@ -16,7 +16,7 @@
     <template #params>
       <div class="param-row">
         <span class="param-label">登记部门</span>
-        <n-select v-model:value="params.dept" :options="deptOptions" size="small" style="width: 180px" />
+        <n-select v-model:value="params.department" :options="deptOptions" size="small" style="width: 180px" />
       </div>
       <div class="param-row">
         <span class="param-label">生成数量</span>
@@ -25,7 +25,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.code }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -39,21 +39,24 @@ import { useApiTool } from './useApiTool'
 
 const deptOptions = [
   { label: '全部', value: '' },
-  { label: '工商', value: 'gs' },
-  { label: '机构编制', value: 'jgbz' },
-  { label: '民政', value: 'mz' },
-  { label: '其他', value: 'other' },
+  { label: '工商', value: '工商' },
+  { label: '机构编制', value: '机构编制' },
+  { label: '民政', value: '民政' },
+  { label: '司法行政', value: '司法行政' },
+  { label: '文化', value: '文化' },
+  { label: '外交', value: '外交' },
+  { label: '旅游', value: '旅游' },
 ]
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { dept: '', count: 10 },
-  async (p) => (await toolsApi.creditCode(p)).data.list,
+  { department: '', count: 10 },
+  async (p) => (await toolsApi.creditCode(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.code).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['统一社会信用代码'],
-  rows: items.value.map((i) => [i.code]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

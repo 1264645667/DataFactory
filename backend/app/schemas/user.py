@@ -91,7 +91,7 @@ class UserListItem(BaseModel):
 class ApproveRequest(BaseModel):
     """审批通过并分配菜单权限。"""
 
-    menu_ids: list[int] = Field(default_factory=list, description="授权的 df_menu.id 列表")
+    menu_codes: list[str] = Field(default_factory=list, description="授权的权限编码列表（df_menu.menu_code）")
 
 
 class RejectRequest(BaseModel):
@@ -103,7 +103,7 @@ class RejectRequest(BaseModel):
 class PermissionUpdateRequest(BaseModel):
     """更新用户菜单权限。"""
 
-    menu_ids: list[int] = Field(default_factory=list)
+    menu_codes: list[str] = Field(default_factory=list, description="授权的权限编码列表（df_menu.menu_code）")
 
 
 class ResetPasswordResponse(BaseModel):

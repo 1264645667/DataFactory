@@ -108,7 +108,7 @@ async def update_permissions(
 ) -> ApiResponse[None]:
     await user_service.update_user_permissions(
         db, operator=current_user, target_user_id=user_id,
-        menu_ids=body.menu_ids, ip=_ip(request),
+        menu_codes=body.menu_codes, ip=_ip(request),
     )
     return ApiResponse(message="权限已更新，立即生效")
 

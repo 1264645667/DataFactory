@@ -31,6 +31,7 @@
               placeholder="密码"
               :disabled="loading"
               @keydown.enter.prevent="handleLogin"
+              class="custom-input"
             />
           </n-form-item>
           <n-button class="gradient-btn login-btn" size="large" block :loading="loading" attr-type="submit">
@@ -104,6 +105,19 @@ async function handleLogin(): Promise<void> {
   }
 }
 </script>
+<style>
+  /* 覆盖自动填充样式 */
+.custom-input .n-input__input-el:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #f0f2f5 inset !important; /* 使用内阴影覆盖背景色 */
+  -webkit-text-fill-color: #333 !important; /* 同时设置文字颜色 */
+}
+
+
+.custom-input .n-input__input-el {
+  --n-color: #e6f7ff; /* 默认背景色 */
+  --n-color-focus: #bae7ff; /* 聚焦背景色 */
+}
+</style>
 
 <style scoped>
 .login-page {
@@ -178,4 +192,5 @@ async function handleLogin(): Promise<void> {
   justify-content: center;
   z-index: 9999;
 }
+
 </style>

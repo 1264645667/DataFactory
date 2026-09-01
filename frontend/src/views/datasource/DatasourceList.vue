@@ -73,21 +73,22 @@ const filteredList = computed(() => {
   return list.value.filter((d) => d.name.toLowerCase().includes(kw))
 })
 
-// 连接状态灯
-function statusLight(status: string) {
-  const color = { online: '#22c55e', offline: '#ef4444', syncing: '#f59e0b' }[status] ?? '#64748b'
-  const text = { online: '正常', offline: '异常', syncing: '同步中' }[status] ?? status
+// 连接状态灯（基于心跳 online：true=正常 false=异常 null=暂无心跳）
+function statusLight(online: boolean | null) {
+  const color = online === true ? '#22c55e' : online === false ? '#ef4444' : '#64748b'
+  const text = online === true ? '正常' : online === false ? '异常' : '未检测'
   return h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, [
     h('span', { style: `width:9px;height:9px;border-radius:50%;background:${color};box-shadow:0 0 6px ${color}` }),
     h('span', { style: 'font-size:12px;color:#94a3b8' }, text),
   ])
 }
 
-const CACHE_STATUS: Record<string, { type: 'success' | 'warning' | 'error' | 'info'; text: string }> = {
-  initialized: { type: 'success', text: '已初始化' },
-  initializing: { type: 'warning', text: '初始化中' },
-  not_initialized: { type: 'error', text: '未初始化' },
-  syncing: { type: 'info', text: '同步中' },
+// 缓存状态（后端 status 字段）：0=未初始化 1=正常 2=异常 3=同步中
+const CACHE_STATUS: Record<number, { type: 'success' | 'warning' | 'error' | 'info'; text: string }> = {
+  0: { type: 'error', text: '未初始化' },
+  1: { type: 'success', text: '已初始化' },
+  2: { type: 'error', text: '异常' },
+  3: { type: 'info', text: '同步中' },
 }
 
 const columns: DataTableColumns<Datasource> = [
@@ -100,15 +101,15 @@ const columns: DataTableColumns<Datasource> = [
         r.is_default ? h('span', { style: 'color:#fbbf24;margin-left:6px', title: '默认数据源' }, '★') : null,
       ]),
   },
-  { title: '连接地址', key: 'host', render: (r) => `${r.host}:${r.port}/${r.database}` },
+  { title: '连接地址', key: 'host', render: (r) => `${r.host}:${r.port}/${r.database_name}` },
   { title: '所属分组', key: 'group_type', width: 100, render: (r) => groupName(r.group_type) },
-  { title: '连接状态', key: 'status', width: 100, render: (r) => statusLight(r.status) },
+  { title: '连接状态', key: 'online', width: 100, render: (r) => statusLight(r.online) },
   {
     title: '缓存状态',
-    key: 'cache_status',
+    key: 'status',
     width: 110,
     render: (r) => {
-      const s = CACHE_STATUS[r.cache_status] ?? { type: 'default' as const, text: r.cache_status }
+      const s = CACHE_STATUS[r.status] ?? { type: 'default' as const, text: String(r.status) }
       return h(NTag, { size: 'small', type: s.type }, () => s.text)
     },
   },
@@ -166,16 +167,17 @@ function handleSaved(): void {
 }
 
 // ---------------- 操作 ----------------
+// 行级测试连接：已保存的数据源密码在后端加密存储，无法在前端重放，
+// 这里改为触发一次心跳状态检查（读取 Redis 心跳结果）
 async function handleTest(row: Datasource): Promise<void> {
   try {
-    const res = await datasourceApi.test({
-      host: row.host,
-      port: row.port,
-      database: row.database,
-      username: row.username,
-      db_type: row.db_type,
-    })
-    window.$message.success(`连接成功，数据库版本：${res.data.version ?? 'MySQL'}`)
+    const res = await datasourceApi.status(row.id)
+    if (res.data.online) {
+      window.$message.success(`数据源「${row.name}」连接正常`)
+    } else {
+      window.$message.error(`数据源「${row.name}」连接异常${res.data.error ? `：${res.data.error}` : ''}`)
+    }
+    loadList()
   } catch {
     // 错误由拦截器提示
   }

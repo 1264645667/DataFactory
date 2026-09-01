@@ -9,7 +9,8 @@ export function useAuth() {
 
   const user = computed(() => authStore.user)
   const isLoggedIn = computed(() => authStore.isLoggedIn)
-  const isAdmin = computed(() => authStore.user?.role === 'ADMIN')
+  // 管理员标识：group_type === 99（后端不返回 role 字段）
+  const isAdmin = computed(() => authStore.user?.group_type === 99)
 
   function hasPermission(perm: string): boolean {
     return authStore.hasPermission(perm)

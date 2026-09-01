@@ -191,6 +191,8 @@ async def create_datasource(
     )
     db.add(ds)
     await db.flush()
+    # 刷新以加载 server_default 列（created_at/updated_at），避免提交后懒加载触发 MissingGreenlet
+    await db.refresh(ds)
     await audit(
         db, user_id=current_user.id, username=current_user.username, action="ADD_DS",
         resource="datasource", resource_id=ds.id,

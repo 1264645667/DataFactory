@@ -22,7 +22,7 @@
       <div class="param-row">
         <span class="param-label">格式</span>
         <n-select
-          v-model:value="params.format"
+          v-model:value="params.fmt"
           :options="[
             { label: 'yyyy-MM-dd', value: 'yyyy-MM-dd' },
             { label: 'yyyy/MM/dd', value: 'yyyy/MM/dd' },
@@ -35,7 +35,7 @@
       </div>
       <div class="param-row">
         <span class="param-label">是否去重</span>
-        <n-radio-group v-model:value="params.unique" size="small">
+        <n-radio-group v-model:value="params.dedup" size="small">
           <n-radio-button :value="true">去重</n-radio-button>
           <n-radio-button :value="false">不去重</n-radio-button>
         </n-radio-group>
@@ -47,7 +47,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.value }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -64,8 +64,8 @@ const today = Date.now()
 const dateRange = ref<[number, number]>([today - 30 * 86400000, today])
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { start_date: formatDate(today - 30 * 86400000), end_date: formatDate(today), format: 'yyyy-MM-dd', unique: true, count: 100 },
-  async (p) => (await toolsApi.date(p)).data.list,
+  { start_date: formatDate(today - 30 * 86400000), end_date: formatDate(today), fmt: 'yyyy-MM-dd', dedup: true, count: 100 },
+  async (p) => (await toolsApi.date(p)).data.results ?? [],
 )
 
 watch(dateRange, (range) => {
@@ -76,10 +76,10 @@ watch(dateRange, (range) => {
 })
 
 const snapshot = computed(() => ({ ...params }))
-const copyContent = computed(() => items.value.map((i) => i.value).join('\n'))
+const copyContent = computed(() => items.value.map((i) => String(i)).join('\n'))
 const exportData = computed(() => ({
   headers: ['日期'],
-  rows: items.value.map((i) => [i.value]),
+  rows: items.value.map((i) => [String(i)]),
 }))
 </script>
 

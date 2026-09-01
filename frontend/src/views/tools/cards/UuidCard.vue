@@ -17,11 +17,11 @@
     <template #params>
       <div class="param-row">
         <span class="param-label">格式</span>
-        <n-radio-group v-model:value="params.format" size="small">
-          <n-radio-button value="hyphen-lower">含连字符·小写</n-radio-button>
-          <n-radio-button value="plain-lower">无连字符·小写</n-radio-button>
-          <n-radio-button value="hyphen-upper">含连字符·大写</n-radio-button>
-          <n-radio-button value="plain-upper">无连字符·大写</n-radio-button>
+        <n-radio-group v-model:value="params.fmt" size="small">
+          <n-radio-button value="hyphen">含连字符·小写</n-radio-button>
+          <n-radio-button value="plain">无连字符·小写</n-radio-button>
+          <n-radio-button value="upper">含连字符·大写</n-radio-button>
+          <n-radio-button value="lower">无连字符·大写</n-radio-button>
         </n-radio-group>
       </div>
       <div class="param-row">
@@ -43,14 +43,14 @@ import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { format: 'hyphen-lower', count: 100 },
-  async (p) => (await toolsApi.uuid(p)).data.list,
+  { fmt: 'hyphen' as 'hyphen' | 'plain' | 'upper' | 'lower', count: 100 },
+  async (p) => (await toolsApi.uuid(p)).data.results ?? [],
 )
 
-const copyContent = computed(() => items.value.map((i) => i.uuid).join('\n'))
+const copyContent = computed(() => items.value.join('\n'))
 const exportData = computed(() => ({
   headers: ['UUID'],
-  rows: items.value.map((i) => [i.uuid]),
+  rows: items.value.map((i) => [i]),
 }))
 </script>
 

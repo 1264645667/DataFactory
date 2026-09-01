@@ -35,7 +35,7 @@ DS_STATUS_KEY = "df:ds:status:{ds_id}"
 SYNC_LOCK_KEY = "df:lock:sync:{ds_id}"
 SCHEMA_CACHE_TTL = 12 * 3600        # 表结构缓存 12h
 DS_STATUS_TTL = 60                  # 心跳状态 60s
-SYNC_LOCK_TTL = 5 * 60              # 同步分布式锁 5min
+SYNC_LOCK_TTL = 30 * 60  # 同步分布式锁 30min（大数据库同步可能较慢）
 # 以下为内部辅助 Key（文档未列出，心跳计数/防重复通知用）
 DS_FAIL_COUNT_KEY = "df:ds:fail_count:{ds_id}"
 DS_OFFLINE_NOTIFIED_KEY = "df:ds:offline_notified:{ds_id}"

@@ -67,10 +67,10 @@ export const ALL_PERMISSION_KEYS: string[] = PERMISSION_TREE.flatMap((g) =>
   (g.children ?? []).map((c) => c.key),
 )
 
-/** 判断用户是否拥有某权限：管理员默认全量权限 */
+/** 判断用户是否拥有某权限：管理员（group_type=99）默认全量权限 */
 export function hasPermission(user: UserInfo | null, perm: string): boolean {
   if (!user) return false
-  if (user.role === 'ADMIN') return true
+  if (user.group_type === 99) return true
   return (user.permissions ?? []).includes(perm)
 }
 

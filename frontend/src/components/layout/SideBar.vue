@@ -138,7 +138,7 @@ const visibleGroups = computed(() =>
 
 // 头像颜色（按 avatar 序号取色板）
 const AVATAR_COLORS = ['#a78bfa', '#f472b6', '#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#22d3ee', '#c084fc', '#f97316', '#4ade80']
-const avatarColor = computed(() => AVATAR_COLORS[(authStore.user?.avatar ?? 0) % AVATAR_COLORS.length])
+const avatarColor = computed(() => AVATAR_COLORS[((authStore.user?.avatar_index ?? 1) - 1) % AVATAR_COLORS.length])
 
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(`${path}/`)

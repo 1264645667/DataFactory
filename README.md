@@ -245,18 +245,19 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 ```powershell
 cd D:\working_file\DataFactory\backend
-.\.venv\Scripts\Activate.ps1
 
 # 终端 2：Worker（消费造数/同步/心跳任务）
-# Windows 必须加 --pool=threads（或 solo），prefork 在 Windows 不可用！
-celery -A app.celery_app worker -Q high,normal,low -c 4 --pool=threads --loglevel=info
+# Windows 必须加 --pool=solo！默认 prefork 在 Windows 不可用，
+# --pool=threads 在部分 Windows 环境会报 PermissionError，实测 solo 最稳定
+.\.venv\Scripts\python -m celery -A app.celery_app worker -Q high,normal,low --pool=solo --loglevel=info
 
 # 终端 3：Beat（定时调度：02:00 同步、30s 心跳、03:00 消息清理）
-celery -A app.celery_app beat --loglevel=info
+.\.venv\Scripts\python -m celery -A app.celery_app beat --loglevel=info
 ```
 
-> Linux/macOS 可去掉 `--pool=threads` 使用默认 prefork。生产 Docker 镜像中使用 prefork，无需此参数。
+> Linux/macOS 可去掉 `--pool=solo` 使用默认 prefork。生产 Docker 镜像中使用 prefork，无需此参数。
 > 仅调页面不接造数时，Worker/Beat 可先不启动；涉及「造数执行、数据源同步、心跳状态」时必须启动 Worker。
+> **确认 Worker 启动成功的标志**：日志中列出 `[tasks] . tasks.heartbeat_check . tasks.sync_datasource ...` 共 7 个任务。若列表为空，说明 `celery_app.py` 的 `include=["app.tasks"]` 未生效。
 
 ### 4.6 启动前端
 
@@ -268,15 +269,116 @@ npm run dev          # 启动于 http://localhost:5173
 
 Vite 已配置 `/api → http://localhost:8000` 代理，前端请求自动转发到后端，无需额外配置。
 
-### 4.7 联调验证与断点调试
+### 4.7 PyCharm 打断点调试（详细步骤）
 
-1. 浏览器打开 `http://localhost:5173` → 出现猫咪登录页。
-2. 用 `popsicle / Avaritia14589` 登录 → 进入造数总览页（此时数据为空属正常）。
-3. 按第 6 章「功能验收清单」逐项操作验证。
-4. **断点调试**：
-   - 后端：IDE（VS Code/PyCharm）直接以 `app.main:app` 启动 uvicorn 调试器即可打断点；`--reload` 与调试器二选一。
-   - 前端：浏览器 DevTools + `debugger` 语句；接口层在 `src/utils/request.ts` 拦截器可统一观察请求/响应。
-5. **查看任务日志**：造数执行过程在 Worker 终端输出结构化日志；进度数据在 Redis（`redis-cli HGETALL df:task:progress:{task_no}`）。
+> 目标：FastAPI、Celery Worker、Celery Beat 三个进程全部在 PyCharm 里以 Debug 模式运行，可随时打断点单步排查（如数据源同步卡住、心跳不执行等问题）。
+
+#### 步骤 1：打开项目并配置解释器
+
+1. PyCharm → `Open` → 选择项目根目录 `D:\working_file\DataFactory`（**不要只打开 backend**，否则前端文件看不到）。
+2. `File → Settings → Project: DataFactory → Python Interpreter` → 右上角 `⚙ → Add Interpreter → Add Local Interpreter`。
+3. 选 `Existing` → 路径填 `D:\working_file\DataFactory\backend\.venv\Scripts\python.exe` → OK。
+   - 若还没有 `.venv`，先在 PowerShell 执行 4.4 节第 1 步创建并装依赖。
+4. 应用后，Settings 里应能看到 fastapi / celery / sqlalchemy 等包列表，说明解释器识别成功。
+
+#### 步骤 2：标记源码目录（重要，否则 import 报错）
+
+左侧项目树右键 `backend` 文件夹 → `Mark Directory as` → `Sources Root`。
+- 这样 `from app.xxx import ...` 才能被 PyCharm 正确解析。
+- 若已标记可跳过（文件夹图标会变色）。
+
+#### 步骤 3：创建 3 个运行配置（Run Configuration）
+
+菜单 `Run → Edit Configurations → 左上角 + → Python`，分别创建以下 3 个配置：
+
+**配置 A：FastAPI 后端**
+
+| 字段 | 值 |
+|---|---|
+| Name | `FastAPI` |
+| Module name（切换到 Module 模式，不要用 Script path） | `uvicorn` |
+| Parameters | `app.main:app --host 127.0.0.1 --port 8000` |
+| Working directory | `D:\working_file\DataFactory\backend` |
+| Python interpreter | 步骤 1 配好的 `.venv` 解释器 |
+
+> ⚠️ **调试时一定不要加 `--reload` 参数**，热重载会另起子进程，断点会失效。日常改代码想自动重载时，另建一个带 `--reload` 的配置用普通模式跑。
+
+**配置 B：Celery Worker**
+
+| 字段 | 值 |
+|---|---|
+| Name | `Celery Worker` |
+| Module name | `celery` |
+| Parameters | `-A app.celery_app worker -Q high,normal,low --pool=solo --loglevel=info` |
+| Working directory | `D:\working_file\DataFactory\backend` |
+| Python interpreter | 同上 |
+
+**配置 C：Celery Beat（可选，不需要定时任务时可以不启）**
+
+| 字段 | 值 |
+|---|---|
+| Name | `Celery Beat` |
+| Module name | `celery` |
+| Parameters | `-A app.celery_app beat --loglevel=info` |
+| Working directory | `D:\working_file\DataFactory\backend` |
+| Python interpreter | 同上 |
+
+> **三个配置的 Working directory 都必须是 `backend`**：因为 `config.py` 按相对路径读 `.env`（即 `backend/.env`），工作目录错了会读不到 `AES_KEY` 等配置。
+> 无需手动配置环境变量，`.env` 文件由 pydantic-settings 自动加载。
+
+#### 步骤 4：以 Debug 模式启动并打断点
+
+1. 右上角配置下拉框选中 `FastAPI` → 点旁边的 **🐞（Debug）按钮**（不要点 ▶ 普通运行）。
+2. 同样方式用 Debug 启动 `Celery Worker`（需要排查异步任务时）。
+3. 在代码行号左侧单击打红色断点，触发请求后 PyCharm 会自动停在断点处，可查看变量、单步（F8）、步入（F7）、求值表达式（Alt+F8）。
+
+**各问题对应的推荐断点位置：**
+
+| 排查问题 | 断点位置 |
+|---|---|
+| 登录失败/Token 问题 | [backend/app/services/auth_service.py](file:///d:/working_file/DataFactory/backend/app/services/auth_service.py) 登录函数入口 |
+| 数据源保存报错 | [datasource_service.py](file:///d:/working_file/DataFactory/backend/app/services/datasource_service.py) `create_datasource` |
+| 点"测试连接"无心跳数据 | [sync_task.py](file:///d:/working_file/DataFactory/backend/app/tasks/sync_task.py) `heartbeat_check`（Worker 进程内断点） |
+| 同步卡住/无结果 | [sync_task.py](file:///d:/working_file/DataFactory/backend/app/tasks/sync_task.py) `_do_sync`（Worker 进程内断点） |
+| 造数执行问题 | [execute_task.py](file:///d:/working_file/DataFactory/backend/app/tasks/execute_task.py) + [engine/executor.py](file:///d:/working_file/DataFactory/backend/app/engine/executor.py) |
+| 接口返回结构不对 | [backend/app/api/v1/](file:///d:/working_file/DataFactory/backend/app/api/v1/) 对应路由函数 |
+
+> 注意：**Celery 任务的断点必须打在 Worker 进程上**（配置 B 的 Debug 会话），打在 FastAPI 进程上不会触发——API 只是把任务丢进 Redis 队列，真正执行的是 Worker。
+
+#### 步骤 5（可选）：一键同时启动三个配置
+
+`Run → Edit Configurations → + → Compound` → 把 FastAPI / Celery Worker / Celery Beat 都加进去 → 之后选中这个 Compound 配置点 Debug，三个进程一起起。
+
+#### 前端启动与调试
+
+```powershell
+cd D:\working_file\DataFactory\frontend
+npm install          # 仅首次
+npm run dev          # http://localhost:5173
+```
+
+- 也可以直接在 PyCharm 里打开 [frontend/package.json](file:///d:/working_file/DataFactory/frontend/package.json)，点 `scripts.dev` 左侧的 ▶ 图标启动。
+- 前端断点：浏览器 F12 → Sources 面板找到 `src/` 下的 `.vue/.ts` 文件打断点（Vite 自带 sourcemap）；接口统一拦截点在 [src/utils/request.ts](file:///d:/working_file/DataFactory/frontend/src/utils/request.ts)，可在这里断点观察所有请求/响应。
+- Vite 已配置 `/api → http://localhost:8000` 代理，前端直接调 `/api/...` 即可。
+
+#### 手动触发任务辅助调试（不等 Beat 30s 周期）
+
+调试 Worker 任务时，可在 PyCharm 的 Python Console（已加载项目解释器）里直接发任务，立即触发断点：
+
+```python
+from app.celery_app import celery_app
+celery_app.send_task('tasks.heartbeat_check')          # 触发心跳检测
+celery_app.send_task('tasks.sync_datasource', args=[1]) # 触发数据源 1 的表结构同步
+```
+
+查看 Redis 中的心跳/缓存结果：
+
+```python
+import redis
+r = redis.from_url('redis://:baiwang@172.28.31.239:6379/3')
+print(r.get('df:ds:status:1'))   # b'online' / b'offline' / None(暂无心跳)
+print(r.keys('df:tables:*'))     # 表结构缓存
+```
 
 ### 4.8 本地常见问题
 
@@ -285,7 +387,10 @@ Vite 已配置 `/api → http://localhost:8000` 代理，前端请求自动转�
 | `pip install` 报 bcrypt/cryptography 编译错误 | Python 版本过高（3.13+ 无旧版预编译包），换 3.11/3.12；或升级这两个包版本 |
 | 启动日志一堆 Nacos WARNING | 本地没装 Nacos，**正常**，配置中心为可选组件 |
 | 登录一直转圈/网络错误 | 后端 8000 未启动；或 `backend/.env` 的 DATABASE_URL 密码不对 |
-| Celery 启动即报 `ValueError: not enough values to unpack` 或任务不执行 | Windows 没加 `--pool=threads` |
+| Celery 启动即报 `ValueError: not enough values to unpack` 或任务不执行 | Windows 没加 `--pool=solo` |
+| Worker 启动了但 `[tasks]` 列表为空，任务全部不被消费 | `celery_app.py` 缺少 `include=["app.tasks"]`，任务模块未注册 |
+| 数据源一直是「同步中」，列表显示暂无心跳数据 | 上一次同步任务中断导致 Redis 锁未释放。手动清锁：`redis-cli -h 172.28.31.239 -a baiwang -n 3 DEL df:lock:sync:{数据源id}`，并把 `df_datasource.status` 改回 2 后重新点「立即同步」 |
+| 大库同步慢（如 1400+ 张表） | 正常现象，同步锁 TTL 已放宽到 30 分钟；期间数据源状态为「同步中」，完成后自动变为「已初始化」并写入表数量 |
 | 数据源「测试连接」成功但执行造数没反应 | Worker 未启动，或 Worker 队列名不匹配（确认 `-Q high,normal,low`） |
 | 前端 401 反复跳登录 | Token 过期（7 天）属正常；若一直跳，检查系统时间是否准确（JWT 校验时间戳） |
 | `Access denied for user 'dataforge'` | 4.2 节用户未创建或密码与 backend/.env 不一致 |

@@ -57,28 +57,28 @@ const provinceOptions = PROVINCES.map((p) => ({ label: p, value: p === '不限' 
 const yearRange = ref<[number, number]>([1980, 2000])
 
 const { params, items, loading, generate, refill } = useApiTool(
-  { province: '', gender: 'random', year_min: 1980, year_max: 2000, count: 10 },
-  async (p) => (await toolsApi.idcard(p)).data.list,
+  { province: '', gender: 'random', birth_year_start: 1980, birth_year_end: 2000, count: 10 },
+  async (p) => (await toolsApi.idcard(p)).data.results ?? [],
 )
 
 // 滑动条与参数双向同步
 watch(yearRange, ([min, max]) => {
-  params.year_min = min
-  params.year_max = max
+  params.birth_year_start = min
+  params.birth_year_end = max
 })
 
 const columns: DataTableColumns<IdCardItem> = [
-  { title: '身份证号', key: 'idcard' },
+  { title: '身份证号', key: 'id_card' },
   { title: '省份', key: 'province', width: 90 },
   { title: '出生日期', key: 'birth_date', width: 110 },
   { title: '性别', key: 'gender', width: 60 },
-  { title: '校验位', key: 'check', width: 70, render: () => '✓' },
+  { title: '校验位', key: 'check_digit', width: 70, render: (r) => r.check_digit ?? '✓' },
 ]
 
-const copyContent = computed(() => items.value.map((i) => i.idcard).join('\n'))
+const copyContent = computed(() => items.value.map((i) => i.id_card).join('\n'))
 const exportData = computed(() => ({
   headers: ['身份证号', '省份', '出生日期', '性别'],
-  rows: items.value.map((i) => [i.idcard, i.province, i.birth_date, i.gender]),
+  rows: items.value.map((i) => [i.id_card, i.province, i.birth_date, i.gender]),
 }))
 </script>
 

@@ -7,10 +7,10 @@
         <div class="gradient-border-card info-card">
           <div class="info-head">
             <div>
-              <h3 class="info-title">{{ detail.name }}</h3>
+              <h3 class="info-title">{{ detail.scene_name }}</h3>
               <span class="info-meta">
                 {{ detail.node_count }} 个节点 · {{ EXEC_MODE_TEXT[detail.exec_mode] ?? detail.exec_mode }} ·
-                创建人 {{ detail.created_by_name }} · {{ formatDateTime(detail.created_at) }}
+                创建人 {{ detail.creator_name }} · {{ formatDateTime(detail.created_at) }}
               </span>
             </div>
             <div class="info-actions">
@@ -80,7 +80,7 @@ import SceneCaseNode from './components/SceneCaseNode.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSceneProgress } from '@/composables/useSceneProgress'
-import { formatDateTime, formatDateTimeMin, formatDuration, formatNumber } from '@/utils/formatter'
+import { formatDateTime, formatDateTimeMin, formatDurationMs, formatNumber } from '@/utils/formatter'
 
 const route = useRoute()
 const router = useRouter()
@@ -99,7 +99,7 @@ const EXEC_MODE_TEXT: Record<string, string> = { serial: '纯串行', parallel: 
 
 const historyColumns: DataTableColumns<SceneHistoryItem> = [
   { title: '执行编号', key: 'scene_exec_no', width: 160 },
-  { title: '执行时间', key: 'started_at', width: 140, render: (r) => formatDateTimeMin(r.started_at) },
+  { title: '执行时间', key: 'start_at', width: 140, render: (r) => formatDateTimeMin(r.start_at) },
   { title: '节点数', key: 'node_count', width: 70 },
   { title: '总造数条数', key: 'total_rows', width: 110, render: (r) => formatNumber(r.total_rows) },
   {
@@ -107,14 +107,20 @@ const historyColumns: DataTableColumns<SceneHistoryItem> = [
     key: 'status',
     width: 100,
     render: (r) => {
-      const type = r.status === 'success' ? 'success' : r.status === 'partial_success' ? 'warning' : 'error'
-      const textMap: Record<string, string> = { success: '成功', failed: '失败', partial_success: '部分成功', aborted: '已中止', running: '执行中', submitted: '已提交' }
-      const text = textMap[r.status] ?? r.status
-      return h(NTag, { size: 'small', type: type as 'success' | 'warning' | 'error' }, () => text)
+      // 场景执行状态码：0待执行 1执行中 2成功 3失败 4部分成功 5已中止
+      const map: Record<number, { type: 'success' | 'warning' | 'info' | 'error' | 'default'; text: string }> = {
+        0: { type: 'default', text: '待执行' },
+        1: { type: 'info', text: '执行中' },
+        2: { type: 'success', text: '成功' },
+        3: { type: 'error', text: '失败' },
+        4: { type: 'warning', text: '部分成功' },
+        5: { type: 'error', text: '已中止' },
+      }
+      const s = map[r.status] ?? { type: 'default' as const, text: String(r.status) }
+      return h(NTag, { size: 'small', type: s.type }, () => s.text)
     },
   },
-  { title: '耗时', key: 'duration_seconds', width: 90, render: (r) => formatDuration(r.duration_seconds) },
-  { title: '操作人', key: 'created_by_name', width: 80 },
+  { title: '耗时', key: 'duration_ms', width: 90, render: (r) => formatDurationMs(r.duration_ms) },
 ]
 
 async function handleExecute(): Promise<void> {
@@ -122,7 +128,7 @@ async function handleExecute(): Promise<void> {
   executing.value = true
   try {
     const res = await scenesApi.execute(detail.value.id)
-    trackScene(res.data.scene_exec_no, detail.value.name)
+    trackScene(res.data.scene_exec_no, detail.value.scene_name)
   } finally {
     executing.value = false
   }
@@ -150,23 +156,23 @@ onMounted(async () => {
   try {
     const res = await scenesApi.detail(sceneId)
     detail.value = res.data
-    copyName.value = `${res.data.name}_copy`
+    copyName.value = `${res.data.scene_name}_copy`
     // 还原只读画布
-    flowNodes.value = res.data.nodes_json.map((n) => ({
+    flowNodes.value = res.data.nodes.map((n) => ({
       id: n.node_id,
       type: 'case',
       position: n.position,
       data: { case_name: n.case_name, target_count: n.target_count, fail_strategy: n.fail_strategy },
     }))
-    flowEdges.value = res.data.edges_json.map((e) => ({
+    flowEdges.value = res.data.edges.map((e) => ({
       id: e.edge_id,
       source: e.source,
       target: e.target,
       animated: true,
     }))
-    // 最近 5 次执行记录
-    const hist = await scenesApi.history(sceneId, { page: 1, page_size: 5 })
-    historyList.value = hist.data.list
+    // 最近 5 次执行记录（后端返回纯数组，不分页）
+    const hist = await scenesApi.history(sceneId)
+    historyList.value = (hist.data ?? []).slice(0, 5)
   } finally {
     loading.value = false
   }
