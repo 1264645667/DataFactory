@@ -1,7 +1,7 @@
-"""用户与认证业务服务（PRD 第 2 章）。
+"""用户与认证业务服务。
 
-覆盖：登录（含失败锁定，PRD 9.3）、注册申请、审批/拒绝、用户列表、权限分配、
-禁用/启用、重置密码、修改密码、头像、默认数据源、操作日志查询（PRD 2.7）。
+覆盖：登录（含失败锁定）、注册申请、审批/拒绝、用户列表、权限分配、
+禁用/启用、重置密码、修改密码、头像、默认数据源、操作日志查询。
 """
 
 import re
@@ -55,13 +55,13 @@ from app.services.notification_service import audit, notify
 
 logger = structlog.get_logger(__name__)
 
-# 登录失败计数 Redis Key（PRD 9.3）
+# 登录失败计数 Redis Key
 LOGIN_FAIL_KEY = "df:login:fail:{username}"
 
 # 分组名称映射（通知文案用）
 GROUP_NAMES = {1: "销项组", 2: "申报组", 99: "管理员"}
 
-# 密码强度：至少 8 位且同时包含数字和字母（PRD 2.6）
+# 密码强度：至少 8 位且同时包含数字和字母
 _PASSWORD_RULE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
 
 
@@ -86,7 +86,7 @@ def _generate_temp_password(length: int = 10) -> str:
 async def login(
     db: AsyncSession, *, username: str, password: str, ip: str | None, user_agent: str | None
 ) -> LoginResponse:
-    """用户登录（PRD 9.3 登录失败锁定：连续失败 ≥5 次锁定 10 分钟）。
+    """用户登录（连续失败 ≥5 次锁定 10 分钟）。
 
     - 锁定判定：df:login:fail:{username} 计数 ≥ LOGIN_FAIL_MAX_TIMES → 1005 并提示剩余分钟
     - 密码错误：INCR 计数（首次设置 TTL=600s），按剩余次数提示
@@ -177,12 +177,12 @@ async def register(
     ip: str | None,
     user_agent: str | None,
 ) -> None:
-    """提交注册申请（PRD 2.2）：用户名查重（含各状态）→ 创建 status=0 账号 → 通知管理员。"""
+    """提交注册申请用户名查重（含各状态）→ 创建 status=0 账号 → 通知管理员。"""
     if group_type not in (1, 2):
         raise BizException(PARAM_INVALID, "申请分组不合法")
     check_password_strength(password)
 
-    # 用户名唯一性（含待审批/已拒绝等所有状态，PRD 2.6）
+    # 用户名唯一性（含待审批/已拒绝等所有状态）
     result = await db.execute(select(User.id).where(User.username == username))
     if result.scalar_one_or_none() is not None:
         raise BizException(USERNAME_TAKEN)
@@ -206,7 +206,7 @@ async def register(
         ip=ip, user_agent=user_agent,
     )
 
-    # 通知全部管理员（USER_APPLY，高优先级，PRD 11.3）
+    # 通知全部管理员（USER_APPLY，高优先级）
     admin_result = await db.execute(
         select(User).where(User.group_type == 99, User.status == 1)
     )
@@ -321,11 +321,11 @@ async def approve_user(
     menu_codes: list[str],
     ip: str | None,
 ) -> None:
-    """审批通过：分配权限 + APPLY_APPROVED 通知 + 审计（PRD 2.2）。"""
+    """审批通过：分配权限 + APPLY_APPROVED 通知 + 审计。"""
     target = await _get_user_or_404(db, target_user_id)
     if target.status != 0:
         raise BizException(PARAM_INVALID, "该用户不处于待审批状态")
-    menu_codes = await _replace_user_menus(db, target_user_id, menu_ids)
+    menu_codes = await _replace_user_menus(db, target_user_id, menu_codes)
     target.status = 1  # 正常
     target.reject_reason = None
     await notify(
@@ -533,7 +533,7 @@ async def reset_password(
 async def change_my_password(
     db: AsyncSession, *, current_user: User, old_password: str, new_password: str
 ) -> None:
-    """修改自己密码（需验证旧密码，PRD 2.7）。"""
+    """修改自己密码（需验证旧密码）。"""
     # 重新查库取最新密码哈希
     user = await db.get(User, current_user.id)
     if user is None or not verify_password(old_password, user.password):
@@ -567,7 +567,7 @@ async def set_my_default_datasource(
     logger.info("user_default_datasource_set", user_id=current_user.id, datasource_id=datasource_id)
 
 
-# ── 操作日志（PRD 2.7）───────────────────────────────────────────
+# ── 操作日志───────────────────────────────────────────
 
 
 async def list_audit_logs(

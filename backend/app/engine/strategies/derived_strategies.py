@@ -1,8 +1,5 @@
 """派生字段策略：DERIVED（基于同表另一数字字段做四则运算）
 
-需求场景（PRD 扩展）：数字字段 A 随机生成，字段 B = A 的 80%（multiply 0.8），
-字段 C = A - 5000（subtract 5000）。B/C 的值依赖 A 已生成的同批行值。
-
 设计要点：
 - 派生字段本身不随机生成，而是对源字段同批整列值逐元素运算
 - 列式生成模型下需保证源列先生成：data_generator 内做字段级拓扑排序（支持多级派生）
@@ -133,7 +130,7 @@ def topo_order_derived(field_configs: list[dict]) -> list[dict]:
         fc = name_to_field.get(name)
         if fc is not None:
             src = (fc.get("strategy_params") or {}).get("source_column")
-            if src in name_to_field:  # 源也是派生字段 → 先算源
+            if src in name_to_field:
                 visit(src)
             visiting.discard(name)
             visited.add(name)

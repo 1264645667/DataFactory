@@ -3,9 +3,7 @@ import type { ApiResponse } from '@/api/types'
 import { getErrorMessage } from './errorCode'
 import { emitAuthExpired, isUserInteracting } from './authEvents'
 
-// ============================================================
 // Axios 封装：统一注入 Token、统一处理 code != 0、登录过期重试
-// ============================================================
 
 const request = axios.create({
   baseURL: '/api',

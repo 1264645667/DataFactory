@@ -1,4 +1,4 @@
-"""造数总览模块请求/响应 Schema（API 清单 10.8 + PRD 第 3 章）。"""
+"""造数总览模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class OverviewMetrics(BaseModel):
-    """核心指标卡片数据（PRD 3.3，6+1 个指标）。
+    """核心指标卡片数据。
 
     compare_yesterday 存放各指标「较昨日」环比增量，键为指标字段名。
     """
@@ -68,7 +68,7 @@ class MemberRankItem(BaseModel):
 
 
 class ExecRecordItem(BaseModel):
-    """执行记录明细表行（PRD 3.5 表格列）。"""
+    """执行记录明细表行。"""
 
     task_no: str
     case_name: str

@@ -1,4 +1,4 @@
-"""场景管理模块路由（API 清单 10.6，前缀 /api/v1/scenes）。
+"""场景管理模块路由
 
 GET    /                              场景列表（分页 + 筛选）
 GET    /{scene_id}                    场景详情
@@ -8,7 +8,7 @@ DELETE /{scene_id}                    逻辑删除场景
 POST   /{scene_id}/execute            执行场景（返回 scene_exec_no）
 POST   /{scene_id}/copy               复制场景
 GET    /{scene_id}/history            场景执行历史
-GET    /exec/{scene_exec_no}/progress     场景执行实时进度（文档 6.9.3）
+GET    /exec/{scene_exec_no}/progress     场景执行实时进度
 POST   /exec/{scene_exec_no}/abort        强制停止场景
 POST   /exec/{scene_exec_no}/retry-nodes  重试失败节点
 注意：/exec/* 静态前缀路径必须声明在 /{scene_id} 动态路径之前。

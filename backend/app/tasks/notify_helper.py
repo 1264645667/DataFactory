@@ -1,4 +1,4 @@
-"""消息通知写入助手（PRD 11，供各 Celery 任务复用）
+"""消息通知写入助手
 
 统一封装 df_notification 写入 + Redis 未读计数累加（df:notify:unread:{user_id}）。
 注意：本助手只 add + 计数，事务由调用方统一 commit。
@@ -29,7 +29,7 @@ def create_notification(
 
     :param sync_session: 同步 SQLAlchemy Session（由调用方统一 commit）
     :param user_id: 接收用户 ID
-    :param msg_type: 消息类型（EXEC_SUCCESS/EXEC_FAILED/SCENE_*/DS_* 等，PRD 11.3）
+    :param msg_type: 消息类型（EXEC_SUCCESS/EXEC_FAILED/SCENE_*/DS_* 等）
     :param title: 消息标题（≤200 字符）
     :param content: 消息正文（≤1000 字符）
     :param link_url: 关联跳转路径（相对路径，≤500 字符）

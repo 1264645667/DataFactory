@@ -12,6 +12,8 @@ export default defineConfig({
     },
   },
   server: {
+    // 0.0.0.0：允许局域网访问（本机 IP:5173）；API 走相对路径经 dev server 代理回本机后端
+    host: '0.0.0.0',
     port: 5173,
     proxy: {
       '/api': {

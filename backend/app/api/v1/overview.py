@@ -1,4 +1,4 @@
-"""造数总览模块路由（API 清单 10.8，前缀 /api/v1/overview）。
+"""造数总览模块路由
 
 GET /metrics       核心指标卡片数据（Redis 缓存 5min）
 GET /trend         执行趋势折线图（近 7/30/90 天）

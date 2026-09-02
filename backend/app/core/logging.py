@@ -1,7 +1,7 @@
-"""结构化日志配置（structlog，架构文档 2.5）。
+"""结构化日志配置
 
 - 开发环境：彩色可读格式
-- 生产环境：JSON 格式（PRD 9.4.1）
+- 生产环境：JSON 格式
 - 通过 structlog.contextvars 注入 trace_id / user_id
 """
 

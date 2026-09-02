@@ -41,7 +41,7 @@ SUPPORTED_TOOLS = {
 _TOOL_TYPICAL_LEN: dict[str, int | None] = {
     TOOL_IDCARD: 18,
     TOOL_PHONE: 11,
-    TOOL_BANKCARD: None,  # 借记卡 19 / 信用卡 16
+    TOOL_BANKCARD: None,
     TOOL_NAME: None,
     TOOL_CREDIT_CODE: 18,
     TOOL_TAXPAYER_ID: 18,

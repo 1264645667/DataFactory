@@ -1,4 +1,4 @@
-"""场景管理模块请求/响应 Schema（API 清单 10.6 + PRD 第 6 章 + 架构文档 4.3/6.9.3）。"""
+"""场景管理模块请求/响应 Schema。"""
 
 from datetime import datetime
 from typing import Literal
@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# ── 场景编排（架构文档 4.3 nodes_json / edges_json 格式规范）─────
+# ── 场景编排─────
 
 
 class SceneNodePosition(BaseModel):
@@ -63,7 +63,7 @@ class SceneCopyRequest(BaseModel):
 
 
 class SceneListItem(BaseModel):
-    """场景列表项（PRD 6.2.2 表格列）。"""
+    """场景列表项。"""
 
     id: int
     scene_name: str
@@ -124,12 +124,12 @@ class SceneExecHistoryItem(BaseModel):
 
 
 class SceneRetryNodesRequest(BaseModel):
-    """重试失败节点（PRD 6.6）。"""
+    """重试失败节点。"""
 
     node_ids: list[str] = Field(min_length=1, description="需重试的节点 node_id 列表")
 
 
-# ── 场景执行进度（架构文档 6.9.3 响应结构）──────────────────────
+# ── 场景执行进度──────────────────────
 
 
 class SceneNodeProgress(BaseModel):

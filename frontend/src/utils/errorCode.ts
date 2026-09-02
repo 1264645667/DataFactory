@@ -1,4 +1,4 @@
-// 业务错误码 → 中文提示映射（按 PRD 第 12 章）
+// 业务错误码 → 中文提示映射
 const ERROR_CODE_MAP: Record<number, string> = {
   // 通用错误 1000~1099
   1000: '请求参数不合法',

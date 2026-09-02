@@ -1,4 +1,4 @@
-"""数据源同步与心跳检测 Celery 任务（PRD 8.4/8.5/8.6）
+"""数据源同步与心跳检测 Celery 任务
 
 - sync_datasource: Redis 分布式锁 → information_schema 批量采集 →
   UPSERT df_table_cache/df_column_cache/df_index_cache → 刷新 Redis 缓存（12h TTL）→
@@ -27,7 +27,7 @@ from app.tasks.notify_helper import create_notification
 
 logger = structlog.get_logger(__name__)
 
-# ---------------- Redis Key（文档 5.1） ----------------
+# ---------------- Redis Key ----------------
 TABLES_CACHE_KEY = "df:tables:{ds_id}"
 COLUMNS_CACHE_KEY = "df:columns:{ds_id}:{table}"
 INDEXES_CACHE_KEY = "df:indexes:{ds_id}:{table}"
@@ -36,7 +36,7 @@ SYNC_LOCK_KEY = "df:lock:sync:{ds_id}"
 SCHEMA_CACHE_TTL = 12 * 3600        # 表结构缓存 12h
 DS_STATUS_TTL = 60                  # 心跳状态 60s
 SYNC_LOCK_TTL = 30 * 60  # 同步分布式锁 30min（大数据库同步可能较慢）
-# 以下为内部辅助 Key（文档未列出，心跳计数/防重复通知用）
+# 以下为内部辅助 Key
 DS_FAIL_COUNT_KEY = "df:ds:fail_count:{ds_id}"
 DS_OFFLINE_NOTIFIED_KEY = "df:ds:offline_notified:{ds_id}"
 HEARTBEAT_LOCK_KEY = "df:lock:heartbeat"
@@ -46,13 +46,11 @@ DS_STATUS_NORMAL = 1
 DS_STATUS_ERROR = 2
 DS_STATUS_SYNCING = 3
 
-# 心跳连续失败阈值（PRD 11.3：≥3 次触发 DS_OFFLINE）
+# 心跳连续失败阈值（≥3 次触发 DS_OFFLINE）
 HEARTBEAT_FAIL_THRESHOLD = 3
 
 
-# ------------------------------------------------------------------
 # information_schema 采集 SQL（参数化）
-# ------------------------------------------------------------------
 
 _SQL_TABLES = text(
     "SELECT TABLE_NAME, TABLE_COMMENT, TABLE_ROWS, DATA_LENGTH, ENGINE, TABLE_COLLATION, CREATE_TIME "
@@ -114,9 +112,7 @@ def _decode(value):
     return value
 
 
-# ------------------------------------------------------------------
 # 数据源同步
-# ------------------------------------------------------------------
 
 def _collect_metadata(engine, database_name: str) -> tuple[list, dict, dict]:
     """从目标数据源采集表/字段/索引元数据
@@ -241,7 +237,7 @@ def _persist_metadata(session, ds_id: int, table_rows, columns_by_table, indexes
 
 def _refresh_redis_cache(ds_id: int, table_rows, columns_by_table, indexes_by_table,
                          synced_at: datetime, removed_names: list[str]) -> None:
-    """刷新 Redis 表结构缓存（df:tables / df:columns / df:indexes，12h TTL，文档 5.2）"""
+    """刷新 Redis 表结构缓存（df:tables / df:columns / df:indexes，12h TTL）"""
     synced_str = synced_at.strftime("%Y-%m-%d %H:%M:%S")
     tables_payload = []
     for row in table_rows:
@@ -312,7 +308,7 @@ def _refresh_redis_cache(ds_id: int, table_rows, columns_by_table, indexes_by_ta
 
 def _notify_group(session, group_type: int, include_admins: bool, msg_type: str,
                   title: str, content: str, link_url: str, priority: int) -> None:
-    """向指定分组全员（可选含管理员）发送通知（PRD 11.3 接收人规则）"""
+    """向指定分组全员（可选含管理员）发送通知"""
     query = session.query(User).filter(User.status == 1)
     if include_admins:
         query = query.filter((User.group_type == group_type) | (User.group_type == 99))
@@ -373,7 +369,7 @@ def _do_sync(datasource_id: int) -> dict:
             except Exception:  # noqa: BLE001
                 log.warning("sync_redis_refresh_failed")
 
-            # 同步完成通知（该数据源所属分组全员，PRD 11.3）
+            # 同步完成通知（该数据源所属分组全员）
             _notify_group(
                 session, ds.group_type, False,
                 "DS_SYNC_DONE", "数据源同步完成",
@@ -394,7 +390,7 @@ def _do_sync(datasource_id: int) -> dict:
             if ds is not None:
                 ds.status = DS_STATUS_ERROR
                 session.commit()
-                # 同步失败通知（分组全员 + 管理员，高优先级，PRD 11.3）
+                # 同步失败通知（分组全员 + 管理员，高优先级）
                 _notify_group(
                     session, ds.group_type, True,
                     "DS_SYNC_FAILED", "数据源同步失败",
@@ -423,7 +419,7 @@ def sync_datasource(self, datasource_id: int) -> dict:
 
 @celery_app.task(bind=True, max_retries=0, name="tasks.scheduled_sync_all")
 def scheduled_sync_all(self) -> dict:
-    """全量数据源定时同步（每天 02:00，范围：status=正常 的数据源，PRD 8.5）"""
+    """全量数据源定时同步（每天 02:00，范围：status=正常 的数据源）"""
     session = SyncSessionLocal()
     try:
         ids = [
@@ -439,9 +435,7 @@ def scheduled_sync_all(self) -> dict:
     return {"total": len(ids), "success": success, "failed": len(ids) - success}
 
 
-# ------------------------------------------------------------------
 # 心跳检测
-# ------------------------------------------------------------------
 
 def _ping_datasource(datasource_id: int) -> bool:
     """对目标数据源执行轻量 SELECT 1 探活"""
@@ -456,7 +450,7 @@ def _ping_datasource(datasource_id: int) -> bool:
 
 @celery_app.task(bind=True, max_retries=0, name="tasks.heartbeat_check")
 def heartbeat_check(self) -> dict:
-    """所有数据源连接状态心跳检测（每 30s，PRD 8.6）
+    """所有数据源连接状态心跳检测（每 30s）
 
     - 结果写 df:ds:status:{id}（online/offline，TTL 60s）
     - 连续 3 次失败写 DS_OFFLINE 通知（计数用 Redis，1 小时内不重复通知）

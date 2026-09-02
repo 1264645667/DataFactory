@@ -1,6 +1,6 @@
-"""场景管理业务服务（PRD 第 6 章）。
+"""场景管理业务服务。
 
-覆盖：列表/详情/新建/编辑/逻辑删除/执行/复制/执行历史/执行进度（文档 6.9.3）/
+覆盖：列表/详情/新建/编辑/逻辑删除/执行/复制/执行历史/执行进度/
 强制停止/重试失败节点。保存校验：名称唯一(1501)/≥2节点(1502)/循环依赖(1503)/
 Case 有效性(1504)/节点条数(1505)；exec_mode 由 DAG 结构自动识别。
 """
@@ -50,7 +50,7 @@ from app.services.notification_service import audit
 
 logger = structlog.get_logger(__name__)
 
-# Redis Key（文档 5.1/5.2）
+# Redis Key
 SCENE_PROGRESS_KEY = "df:scene:progress:{scene_exec_no}"
 SCENE_NODE_PROGRESS_KEY = "df:scene:node_progress:{scene_exec_no}"
 SCENE_PROGRESS_TTL = 24 * 3600
@@ -119,7 +119,7 @@ async def get_scene_exec_checked(
 
 
 def _detect_exec_mode(nodes: list, edges: list) -> str:
-    """执行模式自动识别（PRD 6.3.3）：
+    """执行模式自动识别
 
     - 无任何连线 → parallel（纯并行）
     - 拓扑分层后每层恰好 1 个节点（所有节点串成一条链）→ serial（纯串行）
@@ -144,7 +144,7 @@ async def _validate_scene_payload(
     edges: list,
     exclude_id: int | None = None,
 ) -> None:
-    """场景保存统一校验（PRD 6.3.4）。
+    """场景保存统一校验。
 
     名称本组唯一(1501) / 至少2节点(1502) / 节点条数(1505) / 循环依赖(1503) / Case有效性(1504)。
     """
@@ -220,7 +220,7 @@ async def list_scenes(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
 ) -> PageData[SceneListItem]:
-    """场景列表（PRD 6.2：分组过滤 + 筛选 + 分页）。"""
+    """场景列表（分组过滤 + 筛选 + 分页）。"""
     conditions = [Scene.is_deleted == 0]
     group_type = group_filter_value(current_user)
     if group_type is not None:
@@ -361,7 +361,7 @@ async def update_scene(
 async def delete_scene(
     db: AsyncSession, *, current_user: User, scene_id: int, ip: str | None
 ) -> None:
-    """逻辑删除场景（is_deleted=1，历史执行记录保留，PRD 6.5.3）。"""
+    """逻辑删除场景（is_deleted=1，历史执行记录保留）。"""
     scene = await get_scene_checked(db, current_user, scene_id)
     scene.is_deleted = 1
     await audit(
@@ -380,7 +380,7 @@ async def copy_scene(
     scene_name: str | None,
     ip: str | None,
 ) -> Scene:
-    """复制场景（PRD 6.5.1）：默认名「原场景名_copy」，复制全部节点与连线。"""
+    """复制场景默认名「原场景名_copy」，复制全部节点与连线。"""
     source = await get_scene_checked(db, current_user, scene_id)
 
     if scene_name:
@@ -442,7 +442,7 @@ async def copy_scene(
 async def execute_scene(
     db: AsyncSession, *, current_user: User, scene_id: int, ip: str | None
 ) -> str:
-    """执行场景（PRD 6.4）：创建 SceneExec（SC 前缀雪花编号 + 快照）→ 下发 Celery。"""
+    """执行场景创建 SceneExec（SC 前缀雪花编号 + 快照）→ 下发 Celery。"""
     scene = await get_scene_checked(db, current_user, scene_id)
 
     snapshot = json.dumps(
@@ -487,7 +487,7 @@ async def execute_scene(
 async def get_scene_history(
     db: AsyncSession, *, current_user: User, scene_id: int, limit: int = 100
 ) -> list[SceneExecHistoryItem]:
-    """场景执行历史（PRD 6.5.2）。"""
+    """场景执行历史。"""
     await get_scene_checked(db, current_user, scene_id)
     result = await db.execute(
         select(SceneExec)
@@ -513,7 +513,7 @@ async def get_scene_history(
     ]
 
 
-# ── 执行进度（文档 6.9.3）────────────────────────────────────────
+# ── 执行进度────────────────────────────────────────
 
 
 def _layer_status(statuses: list[str]) -> str:
@@ -530,7 +530,7 @@ def _layer_status(statuses: list[str]) -> str:
 async def get_scene_progress(
     db: AsyncSession, *, current_user: User, scene_exec_no: str
 ) -> SceneProgressResponse:
-    """场景执行实时进度：读 df:scene:progress + df:scene:node_progress 聚合（文档 6.9.3）。
+    """场景执行实时进度：读 df:scene:progress + df:scene:node_progress 聚合。
 
     Redis miss（已过期）时回退 MySQL（df_scene_exec + df_scene_node_exec）聚合历史数据。
     """
@@ -668,7 +668,7 @@ async def get_scene_progress(
 async def abort_scene(
     db: AsyncSession, *, current_user: User, scene_exec_no: str, ip: str | None
 ) -> None:
-    """强制停止场景（PRD 6.4.4）。
+    """强制停止场景。
 
     - revoke 所有「执行中」节点的 Celery 任务（terminate=True）
     - 所有「等待中」节点置为「已取消」
@@ -750,7 +750,7 @@ async def retry_scene_nodes(
     node_ids: list[str],
     ip: str | None,
 ) -> None:
-    """重试失败节点（PRD 6.6.2）：校验后下发 tasks.retry_scene_nodes。
+    """重试失败节点校验后下发 tasks.retry_scene_nodes。
 
     仅重跑选中的失败/已取消节点，结果追加到本次场景执行记录。
     """

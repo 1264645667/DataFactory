@@ -1,4 +1,4 @@
-"""AI 预留接口路由（PRD 第 10 章，前缀 /api/v1/ai）。
+"""AI 预留接口路由。
 
 与用户 JWT 体系完全独立：X-DataForge-AI-Key 头认证（ai_key_auth 依赖，含状态/过期/限流校验）。
 GET  /datasources                                  数据源列表
@@ -50,7 +50,7 @@ def _decode(value) -> str:
     return value
 
 
-# ── 请求/响应模型（AI 接口专用，PRD 10.3）─────────────────────────
+# ── 请求/响应模型（AI 接口专用）─────────────────────────
 
 
 class AiFieldConfig(BaseModel):
@@ -70,7 +70,7 @@ class AiAssociation(BaseModel):
 
 
 class AiExecuteRequest(BaseModel):
-    """AI 创建并执行造数任务请求（PRD 10.3.4）。"""
+    """AI 创建并执行造数任务请求。"""
 
     case_name: str = Field(min_length=1, max_length=200)
     datasource_id: int
@@ -294,7 +294,7 @@ async def get_task_progress(
     })
 
 
-# ── 策略枚举（AI 理解用，PRD 10.3.6）──────────────────────────────
+# ── 策略枚举 ──────────────────────────────
 
 # 策略元数据：编码 / 名称 / 适用类型 / 参数 Schema
 _STRATEGY_META: list[dict] = [

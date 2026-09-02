@@ -3,9 +3,7 @@ import { computed, ref } from 'vue'
 import { scenesApi } from '@/api/scenes'
 import type { SceneProgressData, SceneStatus } from '@/api/types'
 
-// ============================================================
-// 场景任务进度 Store（按架构文档 3.4.2，与 taskProgressStore 对称）
-// ============================================================
+// 场景任务进度 Store
 
 export interface SceneProgressEntry {
   sceneExecNo: string

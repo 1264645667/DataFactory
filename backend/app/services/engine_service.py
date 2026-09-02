@@ -1,6 +1,6 @@
-"""造数引擎业务服务（PRD 第 4 章）。
+"""造数引擎业务服务。
 
-覆盖：表列表（Redis 优先 + 缓存表回源 + 回写）、表字段详情（含 PRD 4.4.3-A 策略自动推断预填）、
+覆盖：表列表（Redis 优先 + 缓存表回源 + 回写）、表字段详情、
 表索引信息、Case 配置校验（1300~1304/1403）、仅保存 Case、创建并执行（ExecTask + Celery 下发）。
 """
 
@@ -49,13 +49,13 @@ from app.services.notification_service import audit
 
 logger = structlog.get_logger(__name__)
 
-# Redis Key 与 TTL（文档 5.1/5.2）
+# Redis Key 与 TTL
 TABLES_CACHE_KEY = "df:tables:{ds_id}"
 COLUMNS_CACHE_KEY = "df:columns:{ds_id}:{table}"
 INDEXES_CACHE_KEY = "df:indexes:{ds_id}:{table}"
 SCHEMA_CACHE_TTL = 12 * 3600  # 表结构缓存 12h
 
-# 单次造数条数上限（1307，PRD 12.3）
+# 单次造数条数上限（1307）
 MAX_TARGET_COUNT = 100_000_000
 
 # 类型兼容分组（1301：varchar↔varchar、int↔bigint 等同组兼容）
@@ -79,7 +79,7 @@ def _type_group(data_type: str) -> str:
     return dt or "unknown"
 
 
-# ── 策略自动推断（PRD 4.4.3-A，优先级 1~16 依次匹配）────────────────
+# ── 策略自动推断────────────────
 
 
 def infer_strategy(col) -> tuple[str, dict]:
@@ -159,7 +159,7 @@ async def list_tables(
     keyword: str | None = None,
     sort: str | None = None,
 ) -> list[TableItem]:
-    """表列表（PRD 4.3.1）：先查 Redis df:tables:{ds} → miss 查 df_table_cache → 回写。
+    """表列表先查 Redis df:tables:{ds} → miss 查 df_table_cache → 回写。
 
     :param keyword: 模糊匹配表名/备注
     :param sort: name=字母序 rows=数据量 columns=字段数
@@ -241,7 +241,7 @@ async def list_tables(
 async def get_table_columns(
     db: AsyncSession, *, current_user: User, datasource_id: int, table_name: str
 ) -> list[ColumnInfo]:
-    """表字段详情（PRD 4.4）：Redis 优先，附加 PRD 4.4.3-A 自动推断策略预填。"""
+    """表字段详情Redis 优先，附加 自动推断策略预填。"""
     ds = await get_datasource_checked(db, current_user, datasource_id)
 
     payload: list[dict] | None = None
@@ -331,7 +331,7 @@ async def get_table_columns(
 async def get_table_indexes(
     db: AsyncSession, *, current_user: User, datasource_id: int, table_name: str
 ) -> list[IndexInfo]:
-    """表索引信息（PRD 4.4.1 索引展示区）。"""
+    """表索引信息。"""
     await get_datasource_checked(db, current_user, datasource_id)
 
     payload: list[dict] | None = None
@@ -379,7 +379,7 @@ async def get_table_indexes(
     ]
 
 
-# ── Case 配置校验（PRD 4.4.5 / 4.4.6）────────────────────────────
+# ── Case 配置校验────────────────────────────
 
 
 async def _get_column_type_map(db: AsyncSession, datasource_id: int, table_name: str) -> dict[str, str]:
@@ -692,7 +692,7 @@ async def execute_case_config(
     return EngineExecuteResponse(case_id=case.id, task_no=exec_task.task_no)
 
 
-# ── AI 接口复用链路（PRD 10.3.4）──────────────────────────────────
+# ── AI 接口复用链路──────────────────────────────────
 
 
 async def ai_execute_task(
@@ -711,8 +711,7 @@ async def ai_execute_task(
 ) -> dict:
     """AI 创建并执行造数任务（复用引擎执行链路）。
 
-    字段配置自动补全：AI 只需提供关心的字段策略，未提供的字段按
-    PRD 4.4.3-A 推断策略自动补全（元数据取自 df_column_cache）。
+    字段配置自动补全：AI 只需提供关心的字段策略，未提供的字段推断策略自动补全（元数据取自 df_column_cache）。
     save_as_case=False 时不落 Case 记录（df_exec_task.case_id 记 0）。
 
     :return: {"task_no": ..., "case_id": ...}

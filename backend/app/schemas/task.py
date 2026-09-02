@@ -1,11 +1,11 @@
-"""任务进度模块请求/响应 Schema（API 清单 10.7 + 架构文档 6.6/6.7）。"""
+"""任务进度模块请求/响应 Schema。"""
 
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
-# ── 任务实时进度（文档 6.6.2 响应结构）─────────────────────────
+# ── 任务实时进度─────────────────────────
 
 
 class TaskTableProgress(BaseModel):
@@ -43,7 +43,7 @@ class TaskProgressResponse(BaseModel):
     elapsed_seconds: int | None = None
     batch_size: int | None = None
     concurrency: int | None = None
-    # ITERATE_LIST 遍历模式轮次信息（文档 6.7，非遍历任务为 None）
+    # ITERATE_LIST 遍历模式轮次信息
     current_round: int | None = None
     total_rounds: int | None = None
     current_drive_value: str | None = None
@@ -55,7 +55,7 @@ class TaskProgressResponse(BaseModel):
 
 
 class RetryBatchesRequest(BaseModel):
-    """重试失败批次；遍历模式可按轮次重试（文档 6.7）。"""
+    """重试失败批次；遍历模式可按轮次重试。"""
 
     batch_nos: list[int] | None = Field(
         default=None, description="指定批次序号列表，为空=全部失败批次"
@@ -67,7 +67,7 @@ class RetryBatchesRequest(BaseModel):
 
 
 class BatchLogItem(BaseModel):
-    """分批次日志项（PRD 3.5 执行详情抽屉）。"""
+    """分批次日志项。"""
 
     id: int
     table_name: str
@@ -79,7 +79,7 @@ class BatchLogItem(BaseModel):
     start_at: datetime | None = None
     finish_at: datetime | None = None
     duration_ms: int | None = None
-    # 遍历模式扩展（文档 6.7）
+    # 遍历模式扩展
     round_no: int | None = None
     drive_value: str | None = None
 

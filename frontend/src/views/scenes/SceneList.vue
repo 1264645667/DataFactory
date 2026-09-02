@@ -1,5 +1,5 @@
 <template>
-  <!-- 场景列表页（PRD 6.2/6.5） -->
+  <!-- 场景列表页 -->
   <div class="scene-list-page">
     <div class="gradient-border-card list-card">
       <!-- 筛选条件行 -->
@@ -43,7 +43,7 @@
       </n-spin>
     </div>
 
-    <!-- 执行确认弹窗（PRD 6.4.2：执行计划预览） -->
+    <!-- 执行确认弹窗（执行计划预览） -->
     <n-modal v-model:show="executeShow" preset="card" title="准备执行场景" style="width: 560px">
       <n-spin :show="planLoading">
         <n-descriptions :column="2" size="small" label-placement="left">

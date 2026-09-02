@@ -1,5 +1,5 @@
 <template>
-  <!-- 消息铃铛（PRD 11.2）：未读角标 + 下拉最近 10 条 + 60s 轮询 + 新消息抖动 -->
+  <!-- 消息铃铛未读角标 + 下拉最近 10 条 + 60s 轮询 + 新消息抖动 -->
   <n-popover trigger="click" placement="bottom-end" :width="360" v-model:show="popoverShow">
     <template #trigger>
       <div class="bell-wrap" :class="{ 'bell-shake': shaking }" @animationend="shaking = false">

@@ -1,5 +1,5 @@
 <template>
-  <!-- 纳税人识别号生成器（PRD 7.3.6） -->
+  <!-- 纳税人识别号生成器 -->
   <ToolCardBase
     tool-key="taxpayer-id"
     title="纳税人识别号生成器"

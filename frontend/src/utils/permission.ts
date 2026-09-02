@@ -1,6 +1,6 @@
 import type { UserInfo } from '@/api/types'
 
-// 菜单权限树（按 PRD 2.3），供用户管理权限分配弹窗使用
+// 菜单权限树，供用户管理权限分配弹窗使用
 export interface PermissionNode {
   label: string
   key: string

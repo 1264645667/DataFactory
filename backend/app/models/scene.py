@@ -1,4 +1,4 @@
-"""场景管理模型（架构文档 4.1 DDL）。"""
+"""场景管理模型。"""
 
 from datetime import datetime
 

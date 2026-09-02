@@ -1,4 +1,4 @@
-"""消息通知服务 + 操作审计辅助（PRD 第 11 章 / PRD 2.7、9.3）。
+"""消息通知服务 + 操作审计辅助。
 
 - audit()：统一封装 df_audit_log 写入（登录/登出/注册/审批/Case/场景/数据源/权限等敏感操作）。
 - notify()：异步侧 df_notification 写入 + Redis 未读计数累加（df:notify:unread:{user_id}），
@@ -24,7 +24,7 @@ logger = structlog.get_logger(__name__)
 UNREAD_COUNT_KEY = "df:notify:unread:{user_id}"
 
 
-# ── 操作审计（PRD 9.3：敏感操作写 df_audit_log，不可删除）────────
+# ── 操作审计（敏感操作写 df_audit_log，不可删除）────────
 
 
 async def audit(
@@ -45,7 +45,7 @@ async def audit(
         CREATE_CASE/UPDATE_CASE/DELETE_CASE/EXEC_CASE/COPY_CASE/
         CREATE_SCENE/UPDATE_SCENE/DELETE_SCENE/EXEC_SCENE/
         ADD_DS/EDIT_DS/DEL_DS/SYNC_DS/PERMISSION_CHANGED/DISABLE_USER/
-        ENABLE_USER/RESET_PASSWORD/AI_EXEC_TASK 等，PRD 2.7）
+        ENABLE_USER/RESET_PASSWORD/AI_EXEC_TASK 等）
     """
     db.add(
         AuditLog(

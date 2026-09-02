@@ -1,5 +1,5 @@
 <template>
-  <!-- 消息列表页（PRD 11.5）：优先级竖条 / 筛选 / 全部已读 / 点击跳转 -->
+  <!-- 消息列表页优先级竖条 / 筛选 / 全部已读 / 点击跳转 -->
   <div class="notify-page">
     <div class="gradient-border-card list-card">
       <!-- 头部操作 -->

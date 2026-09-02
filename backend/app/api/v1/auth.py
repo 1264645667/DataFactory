@@ -1,6 +1,6 @@
-"""认证模块路由（API 清单 10.1，前缀 /api/v1/auth）。
+"""认证模块路由
 
-POST /login    用户登录（含登录失败锁定，PRD 9.3）
+POST /login    用户登录（含登录失败锁定）
 POST /register 提交注册申请
 POST /logout   主动登出（jti 加入黑名单）
 GET  /me       当前用户信息及权限列表

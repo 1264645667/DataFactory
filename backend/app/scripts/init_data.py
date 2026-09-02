@@ -1,9 +1,9 @@
 """首次数据初始化脚本（幂等）。
 
 在 main.py lifespan 中调用：
-1. 创建内置管理员（PRD 2.1：username=popsicle，password=Avaritia14589 的 bcrypt 哈希，
+1. 创建内置管理员（username=popsicle，password=Avaritia14589 的 bcrypt 哈希，
    group_type=99，status=1）
-2. 初始化 df_menu 全量菜单权限数据（PRD 2.3 菜单编码/子权限项）
+2. 初始化 df_menu 全量菜单权限数据
 
 幂等策略：先查后插，已存在的数据直接跳过，可重复执行。
 """
@@ -17,11 +17,11 @@ from app.models.user import Menu, User
 
 logger = structlog.get_logger()
 
-# 内置管理员账号（PRD 2.1）
+# 内置管理员账号
 ADMIN_USERNAME = "popsicle"
 ADMIN_PASSWORD = "Avaritia14589"
 
-# 全量菜单权限数据（PRD 2.3 菜单权限体系）
+# 全量菜单权限数据
 # 格式：(menu_code, menu_name, parent_code, sort_order, icon)
 MENUS: list[tuple[str, str, str | None, int, str | None]] = [
     # 造数总览

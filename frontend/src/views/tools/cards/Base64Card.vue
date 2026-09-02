@@ -1,5 +1,5 @@
 <template>
-  <!-- Base64 编解码工具（PRD 7.3.12，纯前端本地实现） -->
+  <!-- Base64 编解码工具 -->
   <ToolCardBase
     tool-key="base64"
     title="Base64 编解码工具"

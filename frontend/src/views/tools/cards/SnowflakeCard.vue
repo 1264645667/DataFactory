@@ -1,5 +1,5 @@
 <template>
-  <!-- 雪花 ID 生成器（PRD 7.3.10） -->
+  <!-- 雪花 ID 生成器 -->
   <ToolCardBase
     tool-key="snowflake"
     title="雪花 ID 生成器"

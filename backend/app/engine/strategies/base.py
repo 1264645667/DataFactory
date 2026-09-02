@@ -1,4 +1,4 @@
-"""造数策略抽象基类与字段类型解析工具（架构文档 6.3）"""
+"""造数策略抽象基类与字段类型解析工具 """
 from __future__ import annotations
 
 import re
@@ -20,7 +20,7 @@ class BaseStrategy(ABC):
     strategy_code: str = ""
 
     def validate(self, column_meta: dict, params: dict) -> None:
-        """参数校验，不合法抛 ValueError（中文提示，对应 PRD 4.4.5）
+        """参数校验，不合法抛 ValueError
 
         在执行前的配置校验与每批数据生成前各调用一次。
         """
@@ -35,9 +35,7 @@ class BaseStrategy(ABC):
         """
 
 
-# ------------------------------------------------------------------
 # 字段类型解析工具
-# ------------------------------------------------------------------
 
 _TYPE_RE = re.compile(r"^(\w+)(?:\(([^)]*)\))?")
 

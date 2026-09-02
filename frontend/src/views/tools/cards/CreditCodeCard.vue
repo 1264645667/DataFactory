@@ -1,5 +1,5 @@
 <template>
-  <!-- 统一社会信用代码生成器（PRD 7.3.5） -->
+  <!-- 统一社会信用代码生成器 -->
   <ToolCardBase
     tool-key="credit-code"
     title="统一社会信用代码生成器"

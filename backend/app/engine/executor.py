@@ -1,13 +1,13 @@
 """单 Case 造数执行核心（同步实现，Celery Worker 内调用，禁止 asyncio）
 
-职责（PRD 4.5 / 架构文档 6.1、6.7）：
+职责
 - 解析 df_exec_task + case_snapshot，参数校验，拓扑排序确定插入顺序
 - 初始化 Redis 自增计数器（df:incr:{task_id}:{table}:{column}）
-- calc_batch_size 动态批次（文档 6.1 方案二）+ ThreadPoolExecutor 多线程并发
-- 原生 SQL VALUES 批量拼接插入（文档 6.1 方案一），批次失败原地重试 3 次（指数退避 1s/2s/4s）
+- calc_batch_size 动态批次+ ThreadPoolExecutor 多线程并发
+- 原生 SQL VALUES 批量拼接插入，批次失败原地重试 3 次（指数退避 1s/2s/4s）
 - 失败率超过阈值（默认 50%）任务失败停止；否则部分成功
-- ITERATE_LIST 遍历驱动模式（文档 6.7）：逐轮执行，单轮失败继续下轮
-- Redis 实时进度（Key 结构严格按文档 5.2）：progress 24h TTL、rate 10s TTL
+- ITERATE_LIST 遍历驱动模式逐轮执行，单轮失败继续下轮
+- Redis 实时进度：progress 24h TTL、rate 10s TTL
 - 断点续传 retry_failed_batches：仅重跑 status=失败 的批次
 
 并发模型说明：
@@ -39,7 +39,7 @@ from app.models import Case, ExecBatchLog, ExecTask
 
 logger = structlog.get_logger(__name__)
 
-# ---------------- 状态枚举（与架构文档 4.1 DDL 注释一致） ----------------
+# ---------------- 状态枚举 ----------------
 # df_exec_task.status
 TASK_STATUS_PENDING = 0      # 待执行
 TASK_STATUS_RUNNING = 1      # 执行中
@@ -53,7 +53,7 @@ TASK_STATUS_ABORTED = 6      # 已中止
 BATCH_STATUS_SUCCESS = 1
 BATCH_STATUS_FAILED = 2
 
-# Redis 进度状态字符串（文档 6.6.2）
+# Redis 进度状态字符串
 REDIS_STATUS_MAP = {
     TASK_STATUS_SUCCESS: "success",
     TASK_STATUS_FAILED: "failed",
@@ -61,7 +61,7 @@ REDIS_STATUS_MAP = {
     TASK_STATUS_ABORTED: "aborted",
 }
 
-# ---------------- Redis Key 模板（文档 5.1/5.2） ----------------
+# ---------------- Redis Key 模板 ----------------
 PROGRESS_KEY = "df:task:progress:{task_no}"
 TABLE_PROGRESS_KEY = "df:task:table_progress:{task_no}"
 RATE_KEY = "df:task:rate:{task_no}:{table}"
@@ -88,7 +88,7 @@ def _decode(value: Any) -> Any:
 
 
 def calc_batch_size(target_count: int) -> int:
-    """动态批次大小（文档 6.1 方案二）；settings.BATCH_SIZE_OVERRIDE 可强制覆盖"""
+    """动态批次大小；settings.BATCH_SIZE_OVERRIDE 可强制覆盖"""
     override = getattr(settings, "BATCH_SIZE_OVERRIDE", None)
     if override:
         return int(override)
@@ -102,9 +102,9 @@ def calc_batch_size(target_count: int) -> int:
 
 
 def detect_iterate_driver(config: dict) -> dict | None:
-    """识别 Case 中是否存在 ITERATE_LIST 驱动字段（文档 6.7）
+    """识别 Case 中是否存在 ITERATE_LIST 驱动字段
 
-    全 Case 最多允许一个 ITERATE_LIST 字段（PRD 4.4.4）。
+    全 Case 最多允许一个 ITERATE_LIST 字段。
     """
     driver: dict | None = None
     for field_config in config.get("field_configs") or []:
@@ -161,9 +161,7 @@ def _new_stats() -> dict:
     return {"success_rows": 0, "fail_rows": 0, "errors": [], "stopped": False}
 
 
-# ------------------------------------------------------------------
 # 配置解析与校验
-# ------------------------------------------------------------------
 
 def _validate_config(config: dict) -> None:
     """快照配置基础校验"""
@@ -186,7 +184,7 @@ def _validate_config(config: dict) -> None:
 
 
 def _infer_strategy(col) -> tuple[str, dict]:
-    """关联表字段策略自动推断（PRD 4.4.3-A 简化版，用于未显式配置的关联表）"""
+    """关联表字段策略自动推断"""
     extra = (col.extra or "").lower()
     name = (col.column_name or "").lower()
     data_type = (col.data_type or "").lower()
@@ -314,9 +312,7 @@ def _init_incr_counters(ctx: _CaseContext) -> None:
                 )
 
 
-# ------------------------------------------------------------------
-# Redis 进度（Key 结构严格按文档 5.2）
-# ------------------------------------------------------------------
+# Redis 进度
 
 def _init_progress(ctx: _CaseContext, per_table_target: int, total_rounds: int | None = None) -> None:
     """初始化任务进度 Key（progress / table_progress，TTL 24h）"""
@@ -336,7 +332,7 @@ def _init_progress(ctx: _CaseContext, per_table_target: int, total_rounds: int |
         "updated_at": now,
     }
     if total_rounds is not None:
-        # 遍历模式附加轮次信息（文档 6.7）
+        # 遍历模式附加轮次信息
         mapping.update({"current_round": "0", "total_rounds": str(total_rounds), "current_drive_value": ""})
     pipe.hset(progress_key, mapping=mapping)
     pipe.expire(progress_key, PROGRESS_TTL)
@@ -368,7 +364,7 @@ def _update_table_progress(ctx: _CaseContext, table: str, success_delta: int = 0
 
 
 def _progress_success(ctx: _CaseContext, table: str, count: int) -> None:
-    """批次成功进度更新：整体进度 + 分表进度 + 速率滑动窗口（文档 1.3 链路）"""
+    """批次成功进度更新：整体进度 + 分表进度 + 速率滑动窗口"""
     now = str(int(time.time()))
     progress_key = PROGRESS_KEY.format(task_no=ctx.task_no)
     rate_key = RATE_KEY.format(task_no=ctx.task_no, table=table)
@@ -418,12 +414,10 @@ def _expire_incr_counters(ctx: _CaseContext) -> None:
         logger.warning("incr_counter_expire_failed", task_no=ctx.task_no)
 
 
-# ------------------------------------------------------------------
 # 批量插入（工作线程内执行）
-# ------------------------------------------------------------------
 
 def _bulk_insert(engine, table: str, rows: list[dict]) -> None:
-    """原生批量 VALUES 插入（文档 6.1 方案一，命名参数化防 SQL 注入）"""
+    """原生批量 VALUES 插入"""
     if not rows:
         return
     columns = [_safe_ident(column) for column in rows[0].keys()]
@@ -463,7 +457,7 @@ def _table_result(table: str, status: int, size: int, retry_times: int,
 
 
 def _insert_with_retry(ctx: _CaseContext, table: str, rows: list[dict], batch_no: int) -> dict:
-    """单表批量 INSERT，失败原地重试 max_retry 次（指数退避 1s/2s/4s，PRD 4.5.2）"""
+    """单表批量 INSERT，失败原地重试 max_retry 次（指数退避 1s/2s/4s）"""
     start_ts = time.time()
     start_at = datetime.now()
     retry_times = 0
@@ -599,9 +593,7 @@ def _execute_batch(ctx: _CaseContext, batch_no: int, size: int,
     return batch_result
 
 
-# ------------------------------------------------------------------
 # 批次结果记录（主线程）
-# ------------------------------------------------------------------
 
 def _record_batch_result(ctx: _CaseContext, session, batch_result: dict, stats: dict) -> None:
     """主线程统一写批次日志 + 更新 Redis 进度 + 累计统计"""
@@ -617,7 +609,7 @@ def _record_batch_result(ctx: _CaseContext, session, batch_result: dict, stats: 
             start_at=table_result["start_at"],
             finish_at=table_result["finish_at"],
             duration_ms=table_result["duration_ms"],
-            # 遍历模式轮次信息（文档 6.7 ALTER TABLE 扩展列）
+            # 遍历模式轮次信息
             round_no=batch_result["round_no"],
             drive_value=(str(batch_result["drive_value"]) if batch_result["drive_value"] is not None else None),
             created_at=datetime.now(),
@@ -636,7 +628,7 @@ def _record_batch_result(ctx: _CaseContext, session, batch_result: dict, stats: 
 
 
 def _fail_rate_exceeded(ctx: _CaseContext, stats: dict) -> bool:
-    """失败率是否超过阈值（PRD 4.5.2：失败率 > 50% 任务失败停止）"""
+    """失败率是否超过阈值（失败率 > 50% 任务失败停止）"""
     total = stats["success_rows"] + stats["fail_rows"]
     return total > 0 and stats["fail_rows"] / total > ctx.fail_rate_threshold
 
@@ -646,7 +638,7 @@ def _run_offsets(ctx: _CaseContext, session, offset_list: list[int], batch_no_st
     """对给定 offset 列表并发执行批次（波次提交，控制内存与在途任务数）
 
     每波最多 max_workers*4 个在途批次；批次完成即检查失败率，
-    超阈值则取消未开始的批次、等待运行中批次收尾后停止（PRD 4.5.2）。
+    超阈值则取消未开始的批次、等待运行中批次收尾后停止。
 
     :return: 是否因失败率超阈值而提前停止
     """
@@ -719,7 +711,7 @@ def _run_all(ctx: _CaseContext, session, row_count: int, round_no: int | None,
             break
 
     if stopped:
-        # 未执行的行按失败计入（PRD 4.5.2：失败率超阈值任务失败停止）
+        # 未执行的行按失败计入（失败率超阈值任务失败停止）
         accounted = stats["success_rows"] + stats["fail_rows"]
         remaining = row_count * len(ctx.insert_order) - accounted
         if remaining > 0:
@@ -730,9 +722,7 @@ def _run_all(ctx: _CaseContext, session, row_count: int, round_no: int | None,
     return stopped
 
 
-# ------------------------------------------------------------------
 # 执行模式
-# ------------------------------------------------------------------
 
 def _execute_normal_mode(ctx: _CaseContext, session) -> list[dict]:
     """普通模式：按 target_count 一次性执行"""
@@ -751,7 +741,7 @@ def _execute_normal_mode(ctx: _CaseContext, session) -> list[dict]:
 
 
 def execute_iterate_mode(ctx: _CaseContext, session) -> list[dict]:
-    """ITERATE_LIST 遍历驱动模式（文档 6.7 / PRD 4.5.1-B）
+    """ITERATE_LIST 遍历驱动模式
 
     逐轮串行执行：每轮将驱动字段注入为固定值，主表与各关联表各插入 rows_per_value 行；
     单轮整体失败记录后继续下一轮，不中止整体任务。
@@ -762,7 +752,7 @@ def execute_iterate_mode(ctx: _CaseContext, session) -> list[dict]:
     total_rounds = len(drive_values)
     per_table_target = rows_per_value * total_rounds
 
-    # 遍历模式总条数由策略参数决定（PRD 4.4.7 形态B），校准任务目标条数
+    # 遍历模式总条数由策略参数决定，校准任务目标条数
     if int(ctx.task.target_count or 0) != per_table_target:
         ctx.task.target_count = per_table_target
         session.commit()
@@ -797,7 +787,7 @@ def execute_iterate_mode(ctx: _CaseContext, session) -> list[dict]:
         batch_no_cursor += batches_per_round
         stats_list.append(stats)
         if stats["stopped"]:
-            # 单轮整体失败：记录后继续后续轮次（PRD 4.5.1-B）
+            # 单轮整体失败：记录后继续后续轮次
             logger.warning(
                 "iterate_round_failed_continue",
                 task_no=ctx.task_no, round_no=round_index, drive_value=str(drive_value),
@@ -806,9 +796,7 @@ def execute_iterate_mode(ctx: _CaseContext, session) -> list[dict]:
     return stats_list
 
 
-# ------------------------------------------------------------------
 # 任务终态汇总
-# ------------------------------------------------------------------
 
 def _finalize_task(ctx: _CaseContext, session, stats_list: list[dict], iterate_mode: bool) -> int:
     """汇总任务终态：更新 df_exec_task / df_case / Redis 进度，清理自增计数器"""
@@ -819,7 +807,7 @@ def _finalize_task(ctx: _CaseContext, session, stats_list: list[dict], iterate_m
     total = success_rows + fail_rows
 
     if iterate_mode:
-        # 遍历模式按轮次判定（PRD 4.5.1-B）：全轮成功=成功 / 部分轮失败=部分成功 / 全轮失败=失败
+        # 遍历模式按轮次判定全轮成功=成功 / 部分轮失败=部分成功 / 全轮失败=失败
         total_rounds = len(ctx.iterate_driver["drive_values"])
         failed_rounds = sum(1 for s in stats_list if s["fail_rows"] > 0)
         if failed_rounds == 0:
@@ -829,7 +817,7 @@ def _finalize_task(ctx: _CaseContext, session, stats_list: list[dict], iterate_m
         else:
             final = TASK_STATUS_PARTIAL
     else:
-        # 普通模式按行失败率判定（PRD 4.5.2）
+        # 普通模式按行失败率判定
         if total == 0:
             final = TASK_STATUS_FAILED
             errors = errors or ["未执行任何批次"]
@@ -901,9 +889,7 @@ def _build_result(ctx: _CaseContext, final: int) -> dict:
     }
 
 
-# ------------------------------------------------------------------
 # 对外入口
-# ------------------------------------------------------------------
 
 def _prepare_context(session, task: ExecTask) -> _CaseContext:
     """解析配置并构建执行上下文（含全部静态校验）"""
@@ -923,7 +909,7 @@ def _prepare_context(session, task: ExecTask) -> _CaseContext:
 def execute_case_task(task_id: int) -> dict:
     """单 Case 执行入口（Celery 任务内同步调用）
 
-    流程（PRD 4.5.1）：参数校验 → 插入顺序 → Redis 计数器 → 动态批次 →
+    流程参数校验 → 插入顺序 → Redis 计数器 → 动态批次 →
     多线程并发批次 → 批次日志/进度 → 终态汇总。
     """
     session = SyncSessionLocal()
@@ -1025,7 +1011,7 @@ def _reset_progress_for_retry(ctx: _CaseContext, session, per_table_target: int)
 
 
 def retry_failed_batches(task_id: int) -> dict:
-    """断点续传：仅重跑 status=失败 的批次（PRD 4.5.2 手动重试入口）
+    """断点续传：仅重跑 status=失败 的批次
 
     - 计数器采用 NX 初始化，自增值从上次断点继续，不会重复
     - 关联表批次重试时若主表批次已成功，则从源表采样真实值注入，保证外键一致

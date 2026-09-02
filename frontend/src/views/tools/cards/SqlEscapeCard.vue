@@ -1,5 +1,5 @@
 <template>
-  <!-- SQL 数据转义工具（PRD 7.3.14，纯前端本地实现） -->
+  <!-- SQL 数据转义工具 -->
   <ToolCardBase
     tool-key="sql-escape"
     title="SQL 数据转义工具"

@@ -1,5 +1,5 @@
 <template>
-  <!-- 时间戳转换工具（PRD 7.3.11，纯前端本地实现） -->
+  <!-- 时间戳转换工具 -->
   <ToolCardBase tool-key="timestamp" title="时间戳转换工具" desc="时间戳与日期双向转换，支持时区选择">
     <template #params>
       <!-- 当前时间实时展示 -->

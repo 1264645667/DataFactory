@@ -4,7 +4,7 @@
     <SideBar />
     <div class="app-main">
       <TopBar />
-      <!-- 网络断开通知条（PRD 1.4.2，黄色可关闭） -->
+      <!-- 网络断开通知条 -->
       <n-alert v-if="offline" type="warning" closable class="offline-bar" @close="offline = false">
         网络连接已断开，部分功能不可用
       </n-alert>

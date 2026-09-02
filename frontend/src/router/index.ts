@@ -119,7 +119,7 @@ const router = createRouter({
   routes,
 })
 
-// 权限导航守卫（按架构文档 3.2.2）
+// 权限导航守卫
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 

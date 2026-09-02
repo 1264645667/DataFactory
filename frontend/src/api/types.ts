@@ -1,6 +1,4 @@
-// ============================================================
 // 全部 TypeScript 类型定义，与后端 Schema 一一对应
-// ============================================================
 
 /** 统一响应格式 */
 export interface ApiResponse<T = unknown> {
@@ -233,7 +231,7 @@ export interface Association {
   target_column: string
 }
 
-/** Case config 完整结构（架构文档 4.2，后端 CaseConfig） */
+/** Case config 完整结构 */
 export interface CaseConfigJson {
   version: string
   main_table: string
@@ -369,7 +367,7 @@ export interface CaseExecuteResponse {
   task_no: string
 }
 
-// ---------------- 任务进度（架构文档 6.6.2） ----------------
+// ---------------- 任务进度 ----------------
 
 export type TaskStatus = 'submitted' | 'running' | 'success' | 'failed' | 'partial_success' | 'aborted'
 export type TableRunStatus = 'pending' | 'running' | 'success' | 'failed'
@@ -456,7 +454,7 @@ export interface TaskDetailData {
   batch_logs: BatchLog[]
 }
 
-// ---------------- 场景管理（架构文档 4.3 / 6.9.3） ----------------
+// ---------------- 场景管理 ----------------
 
 export type FailStrategy = 'continue' | 'abort'
 

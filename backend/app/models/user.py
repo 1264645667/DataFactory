@@ -1,4 +1,4 @@
-"""用户与权限体系模型（架构文档 4.1 DDL）。"""
+"""用户与权限体系模型。"""
 
 from datetime import datetime
 

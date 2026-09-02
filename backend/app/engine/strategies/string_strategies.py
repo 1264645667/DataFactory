@@ -1,9 +1,9 @@
 """字符类与通用策略实现
 
-包含：DEFAULT（兜底，按 PRD 4.5.3 各类型生成规则）、RANDOM_FIXED_LEN、
+包含：DEFAULT（兜底）、RANDOM_FIXED_LEN、
 RANDOM_RANGE_LEN、CUSTOM_VALUE、PICK_FROM_LIST、ITERATE_LIST。
 
-所有策略的参数校验失败均抛 ValueError（中文提示，对应 PRD 4.4.5）。
+所有策略的参数校验失败均抛 ValueError
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _random_digits(length: int) -> str:
 
 
 class DefaultStrategy(BaseStrategy):
-    """DEFAULT 兜底策略：按 PRD 4.5.3 各字段类型生成规则"""
+    """DEFAULT 兜底策略 """
 
     strategy_code = "DEFAULT"
 
@@ -166,10 +166,7 @@ class RandomRangeLenStrategy(BaseStrategy):
 
 
 def convert_custom_value(column_meta: dict, value: Any) -> Any:
-    """CUSTOM_VALUE / 列表类策略共用：将用户输入值按字段类型转换并校验
-
-    校验规则与错误提示对应 PRD 4.4.5。
-    """
+    """ CUSTOM_VALUE / 列表类策略共用：将用户输入值按字段类型转换并校验 """
     if value is None:
         return None
     data_type = get_data_type(column_meta)

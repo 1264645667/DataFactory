@@ -1,5 +1,5 @@
 <template>
-  <!-- 身份证号生成器（PRD 7.3.1） -->
+  <!-- 身份证号生成器 -->
   <ToolCardBase
     tool-key="idcard"
     title="身份证号生成器"

@@ -43,7 +43,6 @@ class UUIDStrategy(BaseStrategy):
 class SnowflakeIdGenerator:
     """雪花 ID 生成器（线程安全单例使用）"""
 
-    # 自定义纪元：2024-01-01 00:00:00 UTC（41 位毫秒约可用 69 年）
     EPOCH = 1704038400000
 
     DATACENTER_BITS = 5

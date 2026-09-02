@@ -1,5 +1,5 @@
 <template>
-  <!-- 侧边栏（PRD 1.4.1）：220px 可折叠 64px，分组菜单，权限隐藏，底部猫咪+用户信息 -->
+  <!-- 侧边栏220px 可折叠 64px，分组菜单，权限隐藏，底部猫咪+用户信息 -->
   <div class="sidebar" :class="{ collapsed }">
     <!-- Logo 区 -->
     <div class="sidebar-logo" @click="go('/overview')">
@@ -94,7 +94,7 @@ interface MenuGroup {
   items: MenuItem[]
 }
 
-// 菜单配置（PRD 1.4.1）
+// 菜单配置
 const MENU_GROUPS: MenuGroup[] = [
   {
     title: '',

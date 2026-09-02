@@ -1,5 +1,5 @@
 <template>
-  <!-- 个人中心（PRD 2.7）：改密码 / 默认数据源 / 猫咪头像 / 操作日志 -->
+  <!-- 个人中心改密码 / 默认数据源 / 猫咪头像 / 操作日志 -->
   <div class="profile-page">
     <div class="profile-grid">
       <!-- 修改密码 -->
@@ -177,7 +177,7 @@ const logFilters = reactive({
   timeRange: null as [number, number] | null,
 })
 
-// 操作类型枚举（PRD 2.7）
+// 操作类型枚举
 const ACTION_TYPES = [
   '用户登录', '用户登出', '注册申请', '审批通过', '审批拒绝',
   '创建Case', '修改Case', '删除Case', '执行Case', '复制Case',

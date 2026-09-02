@@ -1,5 +1,5 @@
 <template>
-  <!-- 造数总览（PRD 第 3 章）：指标卡片 + 趋势折线 + 状态饼图 + Top10 柱状 + 成员条形 + 执行记录明细 -->
+  <!-- 造数总览：指标卡片 + 趋势折线 + 状态饼图 + Top10 柱状 + 成员条形 + 执行记录明细 -->
   <div class="overview-page">
     <!-- 指标卡片行 -->
     <n-spin :show="metricsLoading">

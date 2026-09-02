@@ -1,6 +1,6 @@
 """数字类策略：INCR_FROM（指定值自增）
 
-多线程安全方案（架构文档 6.4）：
+多线程安全方案：
 - 每个自增字段对应一个 Redis 原子计数器：df:incr:{task_id}:{table}:{column}
 - 线程不是每次 INCR 1，而是按批次一次性 INCRBY batch_size 预取一段连续区间，
   批内行通过 range_start + index 映射取值，减少 Redis 请求次数
@@ -11,7 +11,7 @@ from typing import Any
 
 from app.engine.strategies.base import BaseStrategy
 
-# Redis Key 模板（文档 5.1）：df:incr:{task_id}:{table}:{column}
+# Redis Key 模板：df:incr:{task_id}:{table}:{column}
 INCR_KEY_TEMPLATE = "df:incr:{task_id}:{table}:{column}"
 
 
@@ -70,7 +70,7 @@ class IncrFromStrategy(BaseStrategy):
                 raise ValueError(f"前缀+数字长度约 {estimated}，超过字段最大长度 {max_len}")
 
     def generate(self, column_meta: dict, params: dict, index: int) -> Any:
-        # range_start 由数据生成器在批前通过 Redis 批量预取注入（文档 6.4）；
+        # range_start 由数据生成器在批前通过 Redis 批量预取注入；
         # 无预取场景（单独调用）退化为 start + index
         range_start = params.get("range_start")
         if range_start is None:

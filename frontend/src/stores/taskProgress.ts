@@ -3,10 +3,8 @@ import { computed, ref } from 'vue'
 import { tasksApi } from '@/api/tasks'
 import type { TaskProgressData, TaskStatus } from '@/api/types'
 
-// ============================================================
-// 多任务并发进度 Store（按架构文档 3.4.1）
+// 多任务并发进度 Store
 // 轮询策略（6.6.4）：默认 2s，按速率动态调整 1s/2s/3s，终态停止
-// ============================================================
 
 export interface TaskProgressEntry {
   taskNo: string

@@ -1,4 +1,4 @@
-"""造数执行 Celery 任务（单 Case，架构文档 2.3.2）
+"""造数执行 Celery 任务（单 Case）
 
 - 队列：high（CELERY_TASK_ROUTES: tasks.execute_data_gen）
 - 任务级不重试（max_retries=0），重试在引擎内部批次级完成
@@ -86,7 +86,7 @@ def execute_data_gen(self, task_id: int, scene_exec_no: str | None = None,
         # 场景节点任务：回写场景节点进度（场景调度器轮询依据）
         _writeback_scene_node(result, scene_exec_no, node_id)
     else:
-        # 独立任务：生成 EXEC_* 消息通知（PRD 11.4）
+        # 独立任务：生成 EXEC_* 消息通知
         _notify_exec_result(result, task_id)
     return result
 
@@ -154,7 +154,7 @@ def _writeback_scene_node(result: dict, scene_exec_no: str, node_id: str) -> Non
 
 
 def _notify_exec_result(result: dict, task_id: int) -> None:
-    """独立造数任务完成后生成消息通知（EXEC_SUCCESS/EXEC_FAILED/EXEC_PARTIAL，PRD 11.4）"""
+    """独立造数任务完成后生成消息通知（EXEC_SUCCESS/EXEC_FAILED/EXEC_PARTIAL）"""
     status_str = result.get("status")
     if status_str in (None, "skipped"):
         return

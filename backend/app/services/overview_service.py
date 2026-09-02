@@ -1,8 +1,8 @@
-"""造数总览业务服务（PRD 第 3 章）。
+"""造数总览业务服务。
 
 覆盖：核心指标卡（7 指标，Redis 缓存 df:stats:{group}:daily 5min）、执行趋势（近 7/30/90 天）、
 执行状态分布、表操作量 Top10、成员贡献排行、执行记录明细（分页 + 筛选）。
-管理员看全量，普通用户强制 group_type 过滤（数据权限，PRD 2.4）。
+管理员看全量，普通用户强制 group_type 过滤（数据权限）。
 """
 
 import json
@@ -32,11 +32,11 @@ from app.schemas.response import PageData
 
 logger = structlog.get_logger(__name__)
 
-# 总览指标缓存（文档 5.1：df:stats:{group_type}:daily，5min）
+# 总览指标缓存（df:stats:{group_type}:daily，5min）
 STATS_CACHE_KEY = "df:stats:{group_type}:daily"
 STATS_CACHE_TTL = 5 * 60
 
-# 执行状态码 → 分布名称（PRD 3.4：成功/失败/执行中/重试中/部分成功）
+# 执行状态码 → 分布名称（成功/失败/执行中/重试中/部分成功）
 _STATUS_NAME_MAP = {
     0: "running",          # 待执行归入执行中
     1: "running",
@@ -63,7 +63,7 @@ def _group_conditions(model, group_type: int | None) -> list:
 
 
 async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetrics:
-    """核心指标卡片数据（PRD 3.3，6+1 指标），Redis 缓存 5 分钟。"""
+    """核心指标卡片数据，Redis 缓存 5 分钟。"""
     group_type = group_filter_value(current_user)
     cache_key = STATS_CACHE_KEY.format(group_type=current_user.group_type)
 
@@ -193,7 +193,7 @@ async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetric
 
 
 async def get_trend(db: AsyncSession, *, current_user: User, days: int) -> TrendResponse:
-    """执行趋势折线图（PRD 3.4-①）：近 N 天每日执行次数/造数条数/成功率。"""
+    """执行趋势折线图近 N 天每日执行次数/造数条数/成功率。"""
     group_type = group_filter_value(current_user)
     task_cond = _group_conditions(ExecTask, group_type)
     today = _today_start()
@@ -234,7 +234,7 @@ async def get_trend(db: AsyncSession, *, current_user: User, days: int) -> Trend
 
 
 async def get_status_dist(db: AsyncSession, *, current_user: User, days: int) -> StatusDistResponse:
-    """执行状态分布饼图（PRD 3.4-②）：范围与趋势图同步（近 N 天）。"""
+    """执行状态分布饼图范围与趋势图同步（近 N 天）。"""
     group_type = group_filter_value(current_user)
     task_cond = _group_conditions(ExecTask, group_type)
     start = _today_start() - timedelta(days=days - 1)
@@ -262,7 +262,7 @@ async def get_status_dist(db: AsyncSession, *, current_user: User, days: int) ->
 
 
 async def get_table_top10(db: AsyncSession, *, current_user: User, days: int) -> list[TableTopItem]:
-    """表操作量 Top10 柱状图（PRD 3.4-③）：按实际插入表聚合成功行数。
+    """表操作量 Top10 柱状图按实际插入表聚合成功行数。
 
     统计口径：df_exec_batch_log 中成功批次（status=1）的 batch_size 之和，
     关联表与主表各自独立成项（ExecTask.success_count 为全表合计，无法按表拆分）。
@@ -300,7 +300,7 @@ async def get_table_top10(db: AsyncSession, *, current_user: User, days: int) ->
 
 
 async def get_member_rank(db: AsyncSession, *, current_user: User, days: int) -> list[MemberRankItem]:
-    """成员贡献排行（PRD 3.4-④）：本组成员按造数条数降序，最多 10 人。"""
+    """成员贡献排行本组成员按造数条数降序，最多 10 人。"""
     group_type = group_filter_value(current_user)
     task_cond = _group_conditions(ExecTask, group_type)
     start = _today_start() - timedelta(days=days - 1)
@@ -348,7 +348,7 @@ async def get_exec_records(
     case_name: str | None = None,
     table_name: str | None = None,
 ) -> PageData[ExecRecordItem]:
-    """执行记录明细表（PRD 3.5：分页 + 筛选）。"""
+    """执行记录明细表（分页 + 筛选）。"""
     group_type = group_filter_value(current_user)
     conditions = _group_conditions(ExecTask, group_type)
     if start_time is not None:

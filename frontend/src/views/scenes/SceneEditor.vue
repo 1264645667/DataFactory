@@ -1,5 +1,5 @@
 <template>
-  <!-- 场景编排页（PRD 6.3）：左 Case 面板 260px + 右 VueFlow 画布 + 底部操作栏 -->
+  <!-- 场景编排页左 Case 面板 260px + 右 VueFlow 画布 + 底部操作栏 -->
   <div class="scene-editor">
     <!-- 左侧 Case 选择面板 -->
     <div class="case-panel glass-card">
@@ -313,7 +313,7 @@ function toSceneEdges(): SceneEdge[] {
   return se().map((e, i) => ({ edge_id: e.id || `e_${i}`, source: e.source, target: e.target }))
 }
 
-/** 保存校验（PRD 6.3.4） */
+/** 保存校验 */
 function validateScene(): boolean {
   if (!sceneName.value.trim()) {
     window.$message.error('场景名称不能为空')

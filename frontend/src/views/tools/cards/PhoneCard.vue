@@ -1,5 +1,5 @@
 <template>
-  <!-- 手机号生成器（PRD 7.3.2） -->
+  <!-- 手机号生成器 -->
   <ToolCardBase
     tool-key="phone"
     title="手机号生成器"

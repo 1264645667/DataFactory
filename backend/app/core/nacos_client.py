@@ -1,7 +1,7 @@
-"""Nacos 配置中心客户端封装（架构文档 8.5.1）。
+"""Nacos 配置中心客户端封装
 
 支持启动拉取和热更新监听。全部操作容错降级：
-Nacos 不可用时记录 WARNING 日志并返回空配置，不阻断服务启动（文档 8.7）。
+Nacos 不可用时记录 WARNING 日志并返回空配置，不阻断服务启动
 """
 
 from typing import Any, Callable
@@ -25,7 +25,7 @@ class NacosConfigManager:
             import nacos
 
             self._client = nacos.NacosClient(
-                server_addresses=settings.NACOS_SERVER,  # 如 "nacos:8848"
+                server_addresses=settings.NACOS_SERVER,
                 namespace=settings.NACOS_NAMESPACE,
                 username=settings.NACOS_USERNAME,
                 password=settings.NACOS_PASSWORD,

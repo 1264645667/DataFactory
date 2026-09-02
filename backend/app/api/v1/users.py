@@ -1,4 +1,4 @@
-"""用户管理模块路由（API 清单 10.2，前缀 /api/v1/users）。
+"""用户管理模块路由
 
 管理端（USER:APPROVE / USER:PERMISSION / USER:DISABLE）+ 个人中心（已登录）。
 注意：/me/* 与 /audit-logs 等静态路径必须声明在 /{user_id} 动态路径之前。
@@ -56,7 +56,7 @@ async def approve(
 ) -> ApiResponse[None]:
     await user_service.approve_user(
         db, operator=current_user, target_user_id=user_id,
-        menu_ids=body.menu_ids, ip=_ip(request),
+        menu_codes=body.menu_codes, ip=_ip(request),
     )
     return ApiResponse(message="已通过审批")
 
@@ -186,7 +186,7 @@ async def set_default_datasource(
     return ApiResponse(message="默认数据源已更新")
 
 
-# ── 操作日志（PRD 2.7）───────────────────────────────────────────
+# ── 操作日志 ───────────────────────────────────────────
 
 
 @router.get("/audit-logs", summary="查询操作日志（普通用户看本组/管理员看全量）")

@@ -1,6 +1,6 @@
 """应用配置（pydantic-settings）。
 
-配置优先级（架构文档 8.7）：
+配置优先级
 1. 环境变量（秘钥、连接串等不可热更新的敏感配置）
 2. Nacos 配置中心（可热更新的业务参数，见 app/core/config_loader.py）
 3. 代码内默认值（最终兜底）
@@ -38,21 +38,21 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────
     REDIS_URL: str = "redis://:baiwang@172.28.31.239:6379/3"
 
-    # ── 密钥（生产环境必须通过环境变量注入，文档 14.2）─────────
+    # ── 密钥（生产环境必须通过环境变量注入）─────────
     # JWT 签名密钥，至少 32 位随机字符串
     SECRET_KEY: str = "dataforge-dev-secret-key-change-me-in-production"
     # AES-256 密钥：base64 编码的 32 字节（数据源密码加密用）
     AES_KEY: str = ""
 
-    # ── JWT（PRD 9.3：7 天有效，支持主动失效）─────────────────
+    # ── JWT（7 天有效，支持主动失效）─────────────────
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
 
-    # ── 登录失败锁定（PRD 9.3：同一用户名连续失败 5 次锁定 10 分钟）─
+    # ── 登录失败锁定（同一用户名连续失败 5 次锁定 10 分钟）─
     LOGIN_FAIL_MAX_TIMES: int = 5
     LOGIN_FAIL_LOCK_SECONDS: int = 600  # 10 分钟
 
-    # ── Nacos（文档第 8 章）──────────────────────────────────
+    # ── Nacos──────────────────────────────────
     NACOS_SERVER: str = "localhost:8848"
     NACOS_NAMESPACE: str = ""  # 留空 = public 命名空间
     NACOS_GROUP: str = "datafactory_group"  # 配置分组，与控制台创建的 Group 保持一致
@@ -61,19 +61,19 @@ class Settings(BaseSettings):
     # Nacos 中统一的业务配置 Data ID
     NACOS_DATA_ID: str = "popsicle_datafactory_config"
 
-    # ── 系统 DB 连接池（文档 12.4）────────────────────────────
+    # ── 系统 DB 连接池────────────────────────────
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30
     DB_POOL_RECYCLE: int = 3600
 
-    # ── 目标数据源动态连接池（文档 12.4）───────────────────────
+    # ── 目标数据源动态连接池───────────────────────
     TARGET_DS_POOL_SIZE: int = 5
     TARGET_DS_MAX_OVERFLOW: int = 5
     TARGET_DS_POOL_TIMEOUT: int = 30
     TARGET_DS_POOL_RECYCLE: int = 1800
 
-    # ── 造数执行器参数（文档 6.8.7 ExecutorSettings）────────────
+    # ── 造数执行器参数────────────
     MAX_WORKERS: int = 8  # 并发线程数（千万级建议 16）
     BATCH_SIZE_OVERRIDE: int | None = None  # None = 自动计算
     BATCH_MAX_RETRY: int = 3  # 单批次最大重试次数

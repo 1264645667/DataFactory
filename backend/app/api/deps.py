@@ -1,12 +1,12 @@
-"""API 公共依赖（架构文档 2.2.3）。
+"""API 公共依赖
 
 - get_current_user：解析 JWT → 查库 → 校验账号状态/Token 黑名单，返回 User ORM 对象；
-  权限列表每次请求实时从 df_user_menu/df_menu 读取（PRD 2.7：权限变更保存后立即生效，无需重新登录）。
+  权限列表每次请求实时从 df_user_menu/df_menu 读取（权限变更保存后立即生效，无需重新登录）。
 - require_permission(code)：权限校验工厂，管理员（group_type=99）隐式拥有全部权限。
 - PageParams：分页参数依赖（page/page_size，page_size 上限 100）。
 - group_filter_value / ensure_group_visible：分组数据权限辅助，
   非管理员（group_type!=99）强制注入 group_type 过滤。
-- ai_key_auth：AI 接口独立 API Key 认证（X-DataForge-AI-Key 头 + 状态/过期/限流校验，PRD 10.2）。
+- ai_key_auth：AI 接口独立 API Key 认证（X-DataForge-AI-Key 头 + 状态/过期/限流校验）。
 """
 
 from datetime import datetime
@@ -99,10 +99,10 @@ async def get_current_user(
 
 
 def require_permission(permission_code: str):
-    """权限校验依赖工厂（PRD 2.3 权限编码，如 ENGINE:EXECUTE）。
+    """权限校验依赖工厂
 
     管理员（group_type=99）隐式拥有全部权限；普通用户实时查库校验，
-    保证管理员调整权限后立即生效（PRD 2.7）。
+    保证管理员调整权限后立即生效
     """
 
     async def _checker(
@@ -164,7 +164,7 @@ def ensure_group_visible(current_user: User, target_group_type: int, error_code:
         raise BizException(error_code)
 
 
-# ── AI 接口 API Key 认证（PRD 10.2）────────────────────────────
+# ── AI 接口 API Key 认证 ────────────────────────────
 
 # AI 限流 Redis Key（每分钟窗口计数）
 AI_RATE_KEY = "df:ai:rate:{key_id}"
@@ -175,7 +175,7 @@ async def ai_key_auth(
     x_dataforge_ai_key: str | None = Header(default=None, alias="X-DataForge-AI-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> AiApiKey:
-    """AI 接口 API Key 认证依赖（PRD 10.2，与用户 JWT 体系分离）。
+    """AI 接口 API Key 认证依赖
 
     校验链：Key 存在 → 状态启用 → 未过期 → Redis 每分钟限流（rate_limit 次/分钟）。
     """

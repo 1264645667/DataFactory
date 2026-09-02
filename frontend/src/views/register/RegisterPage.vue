@@ -1,5 +1,5 @@
 <template>
-  <!-- 注册页（PRD 2.6）：与登录页一致布局，右侧替换为注册表单 -->
+  <!-- 注册页与登录页一致布局，右侧替换为注册表单 -->
   <div class="register-page">
     <!-- 左侧插画区 -->
     <div class="register-art">

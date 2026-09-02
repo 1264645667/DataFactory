@@ -3,10 +3,8 @@ import { tasksApi } from '@/api/tasks'
 import { useTaskProgressStore } from '@/stores/taskProgress'
 import type { TaskProgressData } from '@/api/types'
 
-// ============================================================
 // 任务进度组合式函数（轮询逻辑在 taskProgressStore 内统一实现：
 // 默认 2s，按插入速率动态调整 1s/2s/3s，终态自动停止）
-// ============================================================
 
 export function useTaskProgress() {
   const store = useTaskProgressStore()

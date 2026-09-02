@@ -1,5 +1,5 @@
 <template>
-  <!-- 随机姓名生成器（PRD 7.3.4） -->
+  <!-- 随机姓名生成器 -->
   <ToolCardBase
     tool-key="name"
     title="随机姓名生成器"

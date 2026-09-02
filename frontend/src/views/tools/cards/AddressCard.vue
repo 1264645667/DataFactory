@@ -1,5 +1,5 @@
 <template>
-  <!-- 随机地址生成器（PRD 7.3.7） -->
+  <!-- 随机地址生成器 -->
   <ToolCardBase
     tool-key="address"
     title="随机地址生成器"

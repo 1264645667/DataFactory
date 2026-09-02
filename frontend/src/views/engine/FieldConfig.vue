@@ -1,5 +1,5 @@
 <template>
-  <!-- 字段配置页（PRD 4.4）：表信息 / 索引 / 字段策略配置 / 关联管理 / 创建并执行 -->
+  <!-- 字段配置页表信息 / 索引 / 字段策略配置 / 关联管理 / 创建并执行 -->
   <div class="field-config-page">
     <!-- 顶部操作栏 -->
     <div class="action-bar glass-card">
@@ -168,7 +168,7 @@
       </div>
     </n-spin>
 
-    <!-- 关联管理抽屉（PRD 4.4.6） -->
+    <!-- 关联管理抽屉 -->
     <n-drawer v-model:show="assocDrawerShow" :width="520" placement="right">
       <n-drawer-content title="关联管理" closable>
         <p class="dim assoc-tip">执行造数时，源字段与所有关联目标字段插入完全相同的值（保证外键一致性）。</p>

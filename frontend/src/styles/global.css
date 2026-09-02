@@ -192,6 +192,19 @@ body {
   background: rgba(124, 58, 237, 0.6);
 }
 
+/* ---------- 浏览器自动填充：保持深色主题（覆盖 WebKit 默认白色背景） ---------- */
+/* box-shadow inset 覆盖背景色；transition 长延迟防止 Chrome 重绘时闪白 */
+.n-input .n-input__input-el:-webkit-autofill,
+.n-input .n-input__input-el:-webkit-autofill:hover,
+.n-input .n-input__input-el:-webkit-autofill:focus,
+.n-input .n-input__input-el:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #28283b inset;
+  -webkit-text-fill-color: #e2e8f0;
+  caret-color: #e2e8f0;
+  border-radius: inherit;
+  transition: background-color 99999s ease-in-out 0s;
+}
+
 /* ---------- 骨架屏覆盖色调 ---------- */
 .n-skeleton {
   --n-color: rgba(124, 58, 237, 0.1) !important;

@@ -1,4 +1,4 @@
-"""Case 管理模块路由（API 清单 10.5，前缀 /api/v1/cases）。
+"""Case 管理模块路由
 
 GET    /                   Case 列表（分页 + 筛选）
 GET    /{case_id}          Case 详情（含 config_json）
@@ -98,7 +98,6 @@ async def update_case(
     )
     message = "Case 已保存"
     if result["schema_outdated"]:
-        # PRD 5.3.2：表结构变更提示（保存仍生效）
         message = (
             "检测到表结构已更新，以下字段配置可能失效："
             + "、".join(result["outdated_fields"])

@@ -1,5 +1,5 @@
 <template>
-  <!-- JSON 格式化工具（PRD 7.3.13，纯前端本地实现） -->
+  <!-- JSON 格式化工具 -->
   <ToolCardBase
     tool-key="json"
     title="JSON 格式化工具"

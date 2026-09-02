@@ -1,5 +1,5 @@
 <template>
-  <!-- 新增/编辑数据源表单弹窗（PRD 8.3） -->
+  <!-- 新增/编辑数据源表单弹窗 -->
   <n-modal :show="show" preset="card" :title="isEdit ? '编辑数据源' : '新增数据源'" style="width: 560px" @update:show="close">
     <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="90px" size="small">
       <n-form-item label="数据源名称" path="name">

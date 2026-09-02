@@ -27,7 +27,7 @@ import { useTaskProgressStore } from '@/stores/taskProgress'
 import { useSceneProgressStore } from '@/stores/sceneProgress'
 import CatMascot from './CatMascot.vue'
 
-// 悬浮球（架构文档 3.4.3）：优先展示最新任务进度，多任务显示数量角标
+// 悬浮球优先展示最新任务进度，多任务显示数量角标
 const taskStore = useTaskProgressStore()
 const sceneStore = useSceneProgressStore()
 

@@ -1,5 +1,5 @@
 <template>
-  <!-- 场景画布节点卡片（PRD 6.3.3）：Case 信息 + 造数条数 + 失败策略 + 移除 -->
+  <!-- 场景画布节点卡片Case 信息 + 造数条数 + 失败策略 + 移除 -->
   <div class="scene-node" :class="{ readonly }">
     <Handle type="target" :position="Position.Left" />
     <div class="node-head">

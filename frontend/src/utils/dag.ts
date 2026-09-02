@@ -1,8 +1,6 @@
 import type { SceneEdge, SceneNode } from '@/api/types'
 
-// ============================================================
 // DAG 工具：拓扑分层（Kahn）、循环依赖检测、自动布局、执行模式识别
-// ============================================================
 
 export interface DagEdge {
   source: string
@@ -74,7 +72,7 @@ export function autoLayout(nodes: SceneNode[], edges: SceneEdge[]): Record<strin
 }
 
 /**
- * 执行模式自动识别（PRD 6.3.3）
+ * 执行模式自动识别
  */
 export function detectExecMode(nodeCount: number, edges: DagEdge[]): { mode: 'serial' | 'parallel' | 'mixed'; text: string } {
   if (edges.length === 0) {

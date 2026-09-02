@@ -1,4 +1,4 @@
-"""消息通知模型（架构文档 4.1 DDL）。"""
+"""消息通知模型。"""
 
 from datetime import datetime
 

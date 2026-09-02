@@ -1,6 +1,6 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
-// Naive UI 暗色主题覆盖（按架构文档 3.3）
+// Naive UI 暗色主题覆盖
 export const darkThemeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: '#7c3aed', // 主色：紫色

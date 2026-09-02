@@ -1,4 +1,4 @@
-"""用户与认证模块请求/响应 Schema（API 清单 10.1/10.2 + PRD 第 2 章）。"""
+"""用户与认证模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -35,7 +35,7 @@ class LoginResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """注册申请（PRD 2.6 字段校验规则）。"""
+    """注册申请。"""
 
     username: str = Field(
         min_length=4, max_length=20, pattern=r"^\w+$", description="4~20位字母/数字/下划线"

@@ -1,5 +1,5 @@
 <template>
-  <!-- 策略参数动态控件（PRD 4.4.4）：根据策略类型渲染不同输入组件 -->
+  <!-- 策略参数动态控件根据策略类型渲染不同输入组件 -->
   <div class="strategy-params">
     <!-- 随机 X 位生成 -->
     <n-input-number

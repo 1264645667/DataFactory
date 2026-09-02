@@ -1,8 +1,7 @@
-"""Redis 客户端管理。
+"""Redis 客户端管理
 
 - redis_client：redis.asyncio 异步客户端（FastAPI 请求链路）
 - sync_redis_client：同步 redis.Redis 客户端（Celery 同步任务）
-连接数规划见架构文档 12.2。
 """
 
 import redis.asyncio as aioredis

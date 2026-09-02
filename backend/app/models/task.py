@@ -1,4 +1,4 @@
-"""执行任务与日志模型（架构文档 4.1 DDL + 6.7 扩展列 + 11.2 补充索引）。"""
+"""执行任务与日志模型。"""
 
 from datetime import datetime
 
@@ -66,7 +66,7 @@ class ExecTask(Base):
 class ExecBatchLog(Base):
     """执行批次日志（断点续传依据）。
 
-    含文档 6.7 遍历模式扩展列 round_no / drive_value。
+    含遍历模式扩展列 round_no / drive_value。
     """
 
     __tablename__ = "df_exec_batch_log"
@@ -88,7 +88,7 @@ class ExecBatchLog(Base):
     start_at: Mapped[datetime | None] = mapped_column(DateTime)
     finish_at: Mapped[datetime | None] = mapped_column(DateTime)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
-    # ── 文档 6.7：ITERATE_LIST 遍历模式扩展列 ──
+    # ── ITERATE_LIST 遍历模式扩展列 ──
     round_no: Mapped[int | None] = mapped_column(
         SmallInteger, comment="遍历模式轮次序号（从0开始）"
     )
@@ -102,7 +102,7 @@ class ExecBatchLog(Base):
     __table_args__ = (
         Index("idx_task", "task_id"),
         Index("idx_task_table", "task_id", "table_name"),
-        # 文档 11.2 补充索引：遍历模式按 round_no 重试查询
+        # 补充索引：遍历模式按 round_no 重试查询
         Index("idx_task_round", "task_id", "round_no", "status"),
         {
             "comment": "执行批次日志（断点续传依据）",
@@ -138,7 +138,7 @@ class AuditLog(Base):
         Index("idx_user", "user_id"),
         Index("idx_action", "action"),
         Index("idx_created", "created_at"),
-        # 文档 11.2 补充索引：按用户+时间（个人日志）
+        # 补充索引：按用户+时间（个人日志）
         Index("idx_user_created", "user_id", "created_at"),
         {
             "comment": "操作审计日志（不可删除）",

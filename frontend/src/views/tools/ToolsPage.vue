@@ -1,5 +1,5 @@
 <template>
-  <!-- 造数快捷工具页（PRD 7.2）：卡片式瀑布流 + 名称搜索 -->
+  <!-- 造数快捷工具页卡片式瀑布流 + 名称搜索 -->
   <div class="tools-page">
     <div class="tools-header">
       <n-input v-model:value="keyword" size="small" clearable placeholder="按工具名称搜索" style="width: 260px">

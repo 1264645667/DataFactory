@@ -1,6 +1,6 @@
 """目标数据源动态连接池（同步版，供 Celery Worker / 造数引擎使用）
 
-设计要点（架构文档 2.4 的同步实现）：
+设计要点
 - 按 datasource_id 缓存 SQLAlchemy Engine（mysql+pymysql）
 - pool_size=5 / max_overflow=5 / pool_recycle=1800
 - 线程锁 double-check 保证并发场景下同一数据源只创建一个 Engine

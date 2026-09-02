@@ -1,5 +1,5 @@
 <template>
-  <!-- 数据源管理列表页（PRD 8.2） -->
+  <!-- 数据源管理列表页 -->
   <div class="ds-list-page">
     <div class="gradient-border-card list-card">
       <!-- 顶部操作 -->
@@ -23,7 +23,7 @@
     <!-- 新增/编辑表单弹窗 -->
     <DatasourceForm v-model:show="formShow" :datasource="editingDs" @saved="handleSaved" />
 
-    <!-- 删除二次确认弹窗（PRD 8.2.3） -->
+    <!-- 删除二次确认弹窗 -->
     <n-modal v-model:show="deleteShow" preset="card" title="确认删除数据源" style="width: 520px">
       <n-alert type="warning" :show-icon="false" class="mb-3">
         确认删除数据源「{{ deletingDs?.name }}」？
@@ -195,7 +195,7 @@ async function handleSetDefault(row: Datasource): Promise<void> {
   loadList()
 }
 
-// ---------------- 删除（PRD 8.2.3：删除前校验 + 二次确认） ----------------
+// ---------------- 删除（删除前校验 + 二次确认） ----------------
 const deleteShow = ref(false)
 const deleting = ref(false)
 const deletingDs = ref<Datasource | null>(null)

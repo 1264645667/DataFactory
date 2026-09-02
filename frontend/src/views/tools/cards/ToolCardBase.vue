@@ -1,5 +1,5 @@
 <template>
-  <!-- 工具卡片基座（PRD 7.4）：展开/收起、一键复制、历史回填、导出 CSV/TXT、大批量进度条 -->
+  <!-- 工具卡片基座展开/收起、一键复制、历史回填、导出 CSV/TXT、大批量进度条 -->
   <div class="tool-card gradient-border-card">
     <!-- 卡片头：名称 + 简介 + 展开开关 -->
     <div class="tool-head" @click="expanded = !expanded">
@@ -54,7 +54,7 @@
             <n-button size="tiny" :type="copied ? 'success' : 'primary'" secondary @click="handleCopy">
               {{ copied ? '已复制' : '一键复制' }}
             </n-button>
-            <!-- 结果 ≥100 条时展示导出按钮（PRD 7.4） -->
+            <!-- 结果 ≥100 条时展示导出按钮 -->
             <template v-if="exportData && resultCount >= 100">
               <n-button size="tiny" secondary @click="handleExport('csv')">导出 CSV</n-button>
               <n-button size="tiny" secondary @click="handleExport('txt')">导出 TXT</n-button>

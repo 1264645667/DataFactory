@@ -1,7 +1,7 @@
-"""数据源业务服务（PRD 第 8 章）。
+"""数据源业务服务。
 
 覆盖：列表（含心跳状态）、新增（名称查重 + AES 加密 + 异步初始化）、编辑（密码保持原值 + 重同步）、
-删除（硬校验 + 级联清理，PRD 8.2.3）、测试连接、手动同步（分布式锁）、连接状态查询。
+删除（硬校验 + 级联清理）、测试连接、手动同步（分布式锁）、连接状态查询。
 """
 
 import time
@@ -45,7 +45,7 @@ from app.services.notification_service import audit
 
 logger = structlog.get_logger(__name__)
 
-# Redis Key（文档 5.1）
+# Redis Key
 DS_STATUS_KEY = "df:ds:status:{ds_id}"
 SYNC_LOCK_KEY = "df:lock:sync:{ds_id}"
 TABLES_CACHE_KEY = "df:tables:{ds_id}"
@@ -89,7 +89,7 @@ async def get_datasource_checked(db: AsyncSession, current_user: User, datasourc
 async def list_datasources(
     db: AsyncSession, *, current_user: User, keyword: str | None = None
 ) -> list[DatasourceItem]:
-    """数据源列表（分组隔离 + Redis 心跳状态 + 默认标记，PRD 8.2.1）。"""
+    """数据源列表（分组隔离 + Redis 心跳状态 + 默认标记）。"""
     conditions = []
     group_type = group_filter_value(current_user)
     if group_type is not None:
@@ -154,7 +154,7 @@ async def _check_name_unique(
 
 
 def _check_group_assignable(current_user: User, group_type: int) -> None:
-    """非管理员只能将数据源分配到本组（数据隔离，PRD 9.3）。"""
+    """非管理员只能将数据源分配到本组（数据隔离）。"""
     if current_user.group_type != 99 and group_type != current_user.group_type:
         raise BizException(FORBIDDEN, "只能将数据源分配到本组")
 
@@ -171,7 +171,7 @@ def _trigger_sync_task(datasource_id: int) -> None:
 async def create_datasource(
     db: AsyncSession, *, current_user: User, req: DatasourceCreateRequest, ip: str | None
 ) -> DatasourceItem:
-    """新增数据源（PRD 8.3）：名称查重 → AES 加密存储 → 触发异步初始化。"""
+    """新增数据源名称查重 → AES 加密存储 → 触发异步初始化。"""
     _check_group_assignable(current_user, req.group_type)
     await _check_name_unique(db, req.name)
 
@@ -182,7 +182,7 @@ async def create_datasource(
         port=req.port,
         database_name=req.database_name,
         username=req.username,
-        password=encrypt_aes(req.password),  # AES-256 加密存储（PRD 9.3）
+        password=encrypt_aes(req.password),  # AES-256 加密存储
         group_type=req.group_type,
         status=0,  # 未初始化
         remark=req.remark,
@@ -234,7 +234,7 @@ async def update_datasource(
     req: DatasourceUpdateRequest,
     ip: str | None,
 ) -> None:
-    """编辑数据源（PRD 8.3）：密码不填保持原值；连接信息变更后清除连接池并重同步。"""
+    """编辑数据源密码不填保持原值；连接信息变更后清除连接池并重同步。"""
     ds = await get_datasource_checked(db, current_user, datasource_id)
     _check_group_assignable(current_user, req.group_type)
     await _check_name_unique(db, req.name, exclude_id=datasource_id)
@@ -282,7 +282,7 @@ async def update_datasource(
 async def delete_datasource(
     db: AsyncSession, *, current_user: User, datasource_id: int, ip: str | None
 ) -> None:
-    """删除数据源（PRD 8.2.3）。
+    """删除数据源。
 
     硬校验：存在未删除 Case → 1206；存在执行中任务 → 拦截。
     级联清理：三类缓存表 / Redis Key / 连接池 / 用户默认数据源置 NULL，最后物理删除记录。
@@ -387,7 +387,7 @@ async def test_connection(req: DatasourceTestRequest) -> DatasourceTestResponse:
 async def trigger_sync(
     db: AsyncSession, *, current_user: User, datasource_id: int, ip: str | None
 ) -> DatasourceSyncResponse:
-    """手动触发表结构同步（PRD 8.4）：分布式锁被占返回 1203。"""
+    """手动触发表结构同步分布式锁被占返回 1203。"""
     await get_datasource_checked(db, current_user, datasource_id)
 
     # 分布式锁占用检查（Worker 侧同步任务持有同一把锁）

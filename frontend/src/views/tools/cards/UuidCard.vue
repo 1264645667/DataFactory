@@ -1,5 +1,5 @@
 <template>
-  <!-- UUID 批量生成器（PRD 7.3.9） -->
+  <!-- UUID 批量生成器 -->
   <ToolCardBase
     tool-key="uuid"
     title="UUID 批量生成器"

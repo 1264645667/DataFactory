@@ -2,7 +2,6 @@
 
 - async_engine / AsyncSessionLocal：异步引擎（aiomysql），FastAPI 请求链路使用
 - sync_engine / SyncSessionLocal：同步引擎（pymysql），Celery 同步任务使用
-连接池参数按架构文档 12.4 配置。
 """
 
 from collections.abc import AsyncGenerator
@@ -32,7 +31,7 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 # ── 同步引擎（Celery 同步任务，pymysql 驱动）──────────────────
-# Worker 副本连接数规划（文档 12.2）：pool_size=5, max_overflow=5
+# Worker 副本连接数规划：pool_size=5, max_overflow=5
 sync_engine = create_engine(
     settings.SYNC_DATABASE_URL,
     pool_size=5,

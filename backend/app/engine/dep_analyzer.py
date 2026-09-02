@@ -1,7 +1,7 @@
 """依赖分析工具（拓扑排序）
 
 - build_insert_order: Case 内关联依赖排序（源表先于目标表插入）
-- build_layers: 场景 DAG 拓扑分层（Kahn 算法，架构文档 4.3），层内节点可并行
+- build_layers: 场景 DAG 拓扑分层（Kahn 算法），层内节点可并行
 
 循环依赖 / 自关联均抛 ValueError（中文提示）。
 """
@@ -59,7 +59,7 @@ def build_insert_order(main_table: str, associations: list[dict] | None) -> list
 
 
 def build_layers(nodes: list[dict], edges: list[dict] | None) -> list[list[str]]:
-    """场景 DAG 拓扑分层（Kahn 算法，架构文档 4.3）
+    """场景 DAG 拓扑分层（Kahn 算法）
 
     :param nodes: 节点列表 [{"node_id": ...}]
     :param edges: 有向边列表 [{"source": 前置node_id, "target": 后置node_id}]

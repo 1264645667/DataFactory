@@ -1,6 +1,6 @@
-"""任务进度模块路由（API 清单 10.7，前缀 /api/v1/tasks）。
+"""任务进度模块路由
 
-GET  /{task_no}/progress       任务实时进度（前端每 2s 轮询，文档 6.6.2）
+GET  /{task_no}/progress       任务实时进度（前端每 2s 轮询）
 POST /{task_no}/abort          强制停止任务（仅本人或管理员）
 POST /{task_no}/retry-batches  重试失败批次（断点续传）
 GET  /{task_no}/detail         任务详情（含分批次日志）

@@ -1,4 +1,4 @@
-"""造数引擎模块路由（API 清单 10.4，前缀 /api/v1/engine）。
+"""造数引擎模块路由
 
 GET  /tables                          指定数据源的表列表
 GET  /tables/{table_name}/columns     表字段详情（含自动推断策略预填）

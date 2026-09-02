@@ -1,5 +1,5 @@
 <template>
-  <!-- 场景执行进度面板（PRD 6.4.4）：分层节点状态 / 强制停止场景 -->
+  <!-- 场景执行进度面板分层节点状态 / 强制停止场景 -->
   <n-modal
     :show="true"
     :mask-closable="false"

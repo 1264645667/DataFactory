@@ -1,6 +1,5 @@
 """安全模块：bcrypt 密码哈希、JWT 认证、Token 黑名单、AES-256-CBC 加解密。
 
-对应架构文档 6.5 / 14 章、PRD 9.3 安全要求。
 说明：bcrypt 5.x 移除了 __about__ 导致 passlib 兼容性问题，本模块直接使用 bcrypt 库。
 """
 
@@ -17,7 +16,7 @@ from app.config import settings
 from app.core.redis_client import redis_client
 from app.schemas.errors import TOKEN_BLACKLISTED, UNAUTHORIZED, BizException
 
-# JWT 黑名单 Redis Key 前缀（文档 5.1）
+# JWT 黑名单 Redis Key 前缀
 TOKEN_BLACKLIST_PREFIX = "df:token:blacklist:"
 
 
@@ -84,11 +83,11 @@ async def verify_token(token: str) -> dict:
     return payload
 
 
-# ── AES-256-CBC 加解密（数据源密码加密存储，PRD 9.3）─────────────
+# ── AES-256-CBC 加解密 ─────────────
 
 
 def _get_aes_key() -> bytes:
-    """AES_KEY 为 base64 编码的 32 字节密钥（文档 14.2 生成方式）。"""
+    """AES_KEY 为 base64 编码的 32 字节密钥。"""
     try:
         key = base64.b64decode(settings.AES_KEY)
     except Exception as e:

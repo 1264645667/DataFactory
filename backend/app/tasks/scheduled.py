@@ -1,8 +1,8 @@
-"""Celery Beat 定时任务配置（架构文档 2.3.3）与定时清理任务
+"""Celery Beat 定时任务配置与定时清理任务
 
 - 每天 02:00：全量数据源表结构同步
 - 每 30 秒：数据源连接状态心跳检测
-- 每天 03:00：消息通知清理（PRD 11.6）
+- 每天 03:00：消息通知清理
 
 celery_app 侧引入方式：from app.tasks.scheduled import CELERYBEAT_SCHEDULE
 并设置 celery_app.conf.beat_schedule = CELERYBEAT_SCHEDULE。
@@ -39,7 +39,7 @@ CELERYBEAT_SCHEDULE = {
     },
 }
 
-# 消息保留策略（PRD 11.6）：优先级 -> 保留天数
+# 消息保留策略优先级 -> 保留天数
 NOTIFICATION_RETENTION_DAYS = {
     1: 90,   # 高优先级（红）90 天
     2: 30,   # 中优先级（黄）30 天
@@ -51,7 +51,7 @@ NOTIFICATION_MAX_PER_USER = 500
 
 @celery_app.task(bind=True, max_retries=0, name="tasks.clean_notifications")
 def clean_notifications(self) -> dict:
-    """消息通知清理（PRD 11.6，软删除）
+    """消息通知清理
 
     1. 按优先级分级保留：高 90 天 / 中 30 天 / 普通 14 天，过期软删除
     2. 每用户最多保留 500 条未删除消息，超出部分按时间倒序软删除最旧的

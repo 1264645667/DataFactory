@@ -1,5 +1,5 @@
 <template>
-  <!-- 场景详情页（PRD 6.5.4）：只读画布 + 最近 5 次执行记录 -->
+  <!-- 场景详情页只读画布 + 最近 5 次执行记录 -->
   <div class="scene-detail-page">
     <n-spin :show="loading">
       <template v-if="detail">

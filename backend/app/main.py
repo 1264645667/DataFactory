@@ -1,4 +1,4 @@
-"""DataForge API 应用入口（应用工厂模式，架构文档 2.2.1）。
+"""DataForge API 应用入口（应用工厂模式）。
 
 lifespan 启动流程：
 1. 加载 Nacos 配置（降级不阻断）
@@ -88,7 +88,7 @@ _ROUTER_SPECS = [
     ("app.api.v1.tasks", "router", "/api/v1/tasks", ["任务进度"]),
     ("app.api.v1.tools", "router", "/api/v1/tools", ["快捷工具"]),
     ("app.api.v1.overview", "router", "/api/v1/overview", ["造数总览"]),
-    # 注意：架构文档 2.2.1 示例遗漏了 notifications，此处按文档 10.10 补上
+    # 注意：示例遗漏了 notifications，此处补上
     ("app.api.v1.notifications", "router", "/api/v1/notifications", ["消息通知"]),
     ("app.api.v1.ai", "router", "/api/v1/ai", ["AI 预留"]),
 ]
@@ -226,7 +226,7 @@ def create_app() -> FastAPI:
     # 注册全局异常处理器
     _register_exception_handlers(app)
 
-    # 健康检查端点（Docker healthcheck + Nacos 心跳探测，文档 8.6）
+    # 健康检查端点（Docker healthcheck + Nacos 心跳探测）
     @app.get("/api/health")
     async def health_check() -> dict:
         db_ok = await check_db_health()

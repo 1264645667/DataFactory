@@ -1,6 +1,5 @@
-"""快捷工具模块路由（API 清单 10.9，前缀 /api/v1/tools）。
-
-全部为 POST，请求体为生成参数，响应为生成结果列表（数量上限见各 Schema，PRD 7.3）。
+"""
+    快捷工具模块路由
 """
 
 from fastapi import APIRouter, Depends
@@ -28,7 +27,7 @@ from app.services import tool_service
 
 router = APIRouter()
 
-# 所有工具统一要求 TOOL:USE 权限（PRD 2.3）
+# 所有工具统一要求 TOOL:USE 权限
 _DEP = Depends(require_permission("TOOL:USE"))
 
 

@@ -1,4 +1,4 @@
-"""造数快捷工具模块请求/响应 Schema（API 清单 10.9 + PRD 7.3 工具清单）。"""
+"""造数快捷工具模块请求/响应 Schema。"""
 
 from typing import Generic, Literal, TypeVar
 

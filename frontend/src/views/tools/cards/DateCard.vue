@@ -1,5 +1,5 @@
 <template>
-  <!-- 日期批量生成器（PRD 7.3.8） -->
+  <!-- 日期批量生成器 -->
   <ToolCardBase
     tool-key="date"
     title="日期批量生成器"

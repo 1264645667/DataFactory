@@ -1,5 +1,5 @@
 <template>
-  <!-- Case 管理列表页（PRD 5.2/5.3） -->
+  <!-- Case 管理列表页 -->
   <div class="case-list-page">
     <div class="gradient-border-card list-card">
       <!-- 筛选条件行 -->

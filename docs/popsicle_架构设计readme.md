@@ -1,14 +1,15 @@
 # DataForge 造数工厂 — 架构设计文档
 
-**版本：** V1.0（一期）
+**版本：** V1.1（一期）
 
-**更新日期：** 2026-08
+**更新日期：** 2026-09
 
 **变更记录：**
 
 | 版本 | 日期      | 变更内容                                                                                                                                                                            |
 |------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | V1.0 | 2026-08 | 初稿,分析系统代码生成                                                                                                                                                                     |
+| V1.1 | 2026-09 | 4.2 config_json 新增 `related_field_configs`（关联表字段策略覆盖）与 `associations[].source_table`（多级关联）；6.3 策略注册表新增 DERIVED/TOOL_GEN 并补充 Worker 重启注意事项；新增 6.10 多级关联执行与关联表字段策略覆盖（含表操作量 Top10 统计口径） |
 
 ---
 
@@ -1067,10 +1068,35 @@ CREATE TABLE df_notification (
       "source_column": "user_id",
       "target_table": "log_info",
       "target_column": "operator_id"
+    },
+    {
+      "source_table": "order_info",
+      "source_column": "order_no",
+      "target_table": "log_info",
+      "target_column": "order_no"
     }
-  ]
+  ],
+  "related_field_configs": {
+    "order_info": [
+      {
+        "column_name": "amount",
+        "data_type": "decimal",
+        "column_type": "decimal(10,2)",
+        "is_nullable": false,
+        "is_primary_key": false,
+        "strategy": "DERIVED",
+        "strategy_params": { "source_column": "price", "operator": "multiply", "operand": 0.8 }
+      }
+    ]
+  }
 }
 ```
+
+**字段补充说明：**
+
+- `associations[].source_table`：可选，**多级关联**时指定源表（缺省为主表）。源表必须是主表或某个关联目标表，形成 A→B→C 链式。
+- `related_field_configs`：可选，**关联表字段策略覆盖**，key 为关联目标表名，value 结构与 `field_configs` 相同。缺省的关联表由执行器按字段元数据自动推断策略兜底（`executor._infer_field_configs_from_cache`）。
+- 被关联注入的目标列（如 `log_info.order_no`）即使在 `related_field_configs` 中配置了策略也不会生效——注入值优先覆盖（见 6.10）。
 
 ### 4.3 场景 nodes_json / edges_json 格式规范
 
@@ -1422,6 +1448,8 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "UUID":              UUIDStrategy,
     "SNOWFLAKE":         SnowflakeStrategy,
     "INCR_FROM":         IncrFromStrategy,
+    "DERIVED":           DerivedStrategy,        # 字段运算派生（依赖同表源列，data_generator 整列计算）
+    "TOOL_GEN":          ToolGenStrategy,        # 调用快捷工具生成器（身份证/手机号/姓名等）
     "NOW":               NowStrategy,
     "RANDOM_TIME_RANGE": RandomTimeRangeStrategy,
     "FIXED_TIME":        FixedTimeStrategy,
@@ -1435,6 +1463,27 @@ def get_strategy(strategy_code: str) -> BaseStrategy:
 ```
 
 新增策略只需实现 `BaseStrategy` 并在 `STRATEGY_REGISTRY` 中注册，无需修改核心引擎。
+
+> 注意：策略实例为**进程内单例**（模块加载即实例化，保证 SNOWFLAKE 等有状态策略并发取值唯一）。因此 **Celery Worker 对策略代码无热更新能力**——新增/修改策略后必须重启 Worker，否则执行报「未知策略」。
+
+**DERIVED / TOOL_GEN 实现要点：**
+
+```python
+# app/engine/strategies/derived_strategies.py
+class DerivedStrategy(BaseStrategy):
+    """字段运算派生：目标值 = 源列值 运算符 操作数（逐行计算）"""
+    strategy_code = "DERIVED"
+    # params: {"source_column": "income", "operator": "multiply", "operand": 0.2}
+    # 校验：源字段同表存在、数字类型、非 SKIP；除法操作数 ≠ 0
+    # 执行：data_generator 生成完源列后整列计算，支持 add/subtract/multiply/divide
+
+# app/engine/strategies/tool_strategies.py
+class ToolGenStrategy(BaseStrategy):
+    """快捷工具生成：复用快捷工具的生成器函数，按行独立随机生成"""
+    strategy_code = "TOOL_GEN"
+    # params: {"tool": "idcard" | "phone" | "name" | "address" | "bank_card" | ...}
+    # 与 tools 模块共用同一生成器实现，保证身份证校验位等规则一致
+```
 
 ### 6.4 分布式自增 ID 方案（Redis INCRBY）
 
@@ -2171,6 +2220,84 @@ CELERY_TASK_ROUTES = {
 ```
 
 场景调度任务（`execute_scene`）本身消耗资源极少，主要是轮询等待和触发子任务，与 `execute_data_gen` 同队列避免调度延迟。
+
+### 6.10 多级关联执行与关联表字段策略覆盖
+
+#### 6.10.1 多级关联（A→B→C 链式）
+
+关联配置 `associations[]` 支持 `source_table` 字段（缺省为主表），允许**关联表再作为源关联其他表**：
+
+```
+tax_change.id_card_no ──→ user.id_card_no ──→ salary.id_card_no
+（主表 → 关联表，一级）     （关联表 → 关联表，多级）
+```
+
+执行链路（`executor.py`）：
+
+```python
+# 1. 拓扑排序确定插入顺序（dep_analyzer.build_insert_order，Kahn 算法）
+ctx.insert_order = build_insert_order(ctx.main_table, ctx.associations)
+# 结果示例：[tax_change, user, salary] —— 保证源表先于目标表插入
+
+# 2. 每批次内按插入顺序逐表生成；目标表的关联列从本批已生成数据按行取值
+def _source_values(source_table, source_column):
+    if source_table in generated:   # 源表已在本批生成 → 按行对齐取值
+        return [row.get(source_column) for row in generated[source_table]]
+    return _sample_source_values(...)  # 断点重试场景：从目标库采样
+
+# 3. 生成时注入覆盖：injected_columns 优先级高于一切策略
+#    （data_generator.py：列在 injected_columns 中则直接使用注入值）
+```
+
+**行对齐保证：** 同一批次内各表行数一致（均为 batch_size），注入值列表与目标表行按索引一一对应，因此三表（或多表）的关联字段逐行一致。
+
+**校验（`engine_service.validate_case_config` / `executor._validate_associations`）：**
+- 源表必须在造数范围内（主表或某个关联目标表）
+- 源字段存在且策略非 SKIP（自增主键不能作为关联源）
+- 同一目标列只能被一个源字段关联
+- 表级循环关联检测（Kahn 拓扑排序失败即存在环）
+
+#### 6.10.2 关联表字段策略覆盖（related_field_configs）
+
+```
+df_case.config_json
+├── field_configs            # 主表字段策略（前端主表 Tab 编辑）
+├── associations             # 关联关系（含多级）
+└── related_field_configs    # 关联表字段策略覆盖（前端关联表 Tab 编辑）
+    └── {表名: [FieldConfig, ...]}
+```
+
+执行器构建各表字段配置的优先级（`_build_table_field_configs`）：
+
+```
+主表   → 快照 field_configs（必有）
+关联表 → 快照 related_field_configs[table]（有则用）
+       → 缓存字段元数据自动推断（_infer_field_configs_from_cache，兜底）
+```
+
+保存校验规则（`validate_case_config` 第 6 步）：
+- `related_field_configs` 的表必须是关联目标表（未纳入造数范围的表配置无意义，报错）
+- 关联表字段**禁止 ITERATE_LIST**（遍历驱动只能是主表字段，否则各表行数无法对齐）
+- 策略合法性 + 参数校验与主表一致
+- 表结构变更检测（1402）覆盖关联表已配置字段
+
+前端交互（`FieldConfig.vue`）：字段表格顶部表 Tab 切换（主表 + 各关联表）；被关联注入的列禁用策略编辑并标记「关联注入」；删除关联后无关联的表配置随 Tab 移除。
+
+#### 6.10.3 表操作量 Top10 统计口径
+
+总览「表操作量 Top10」**按实际插入表聚合**，数据源为 `df_exec_batch_log`（每表每批次一条记录）：
+
+```sql
+SELECT l.table_name, t.datasource_name, SUM(l.batch_size) AS row_count, COUNT(DISTINCT t.case_id)
+FROM df_exec_batch_log l JOIN df_exec_task t ON l.task_id = t.id
+WHERE t.created_at >= :start AND l.status = 1  -- 仅成功批次
+GROUP BY l.table_name, t.datasource_name
+ORDER BY row_count DESC LIMIT 10
+```
+
+- 主表与关联表各自独立成项（`ExecTask.success_count` 为任务全表合计，无法按表拆分，故不用于此统计）
+- 重试不双计：同批次先失败后重试成功产生两条日志，仅 status=1 的成功条参与求和
+
 ## 7. 部署架构（Docker）
 
 ### 7.1 容器化设计原则

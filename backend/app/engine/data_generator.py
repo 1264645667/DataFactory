@@ -1,10 +1,10 @@
 """数据生成器：根据 field_configs 为单表批量生成行数据
 
-规则（PRD 4.4 / 架构文档 4.2、6.3、6.4）：
+规则：
 - SKIP 策略（AUTO_INCREMENT 主键）字段不出现在生成列中，由数据库自动填充
 - 关联值注入（injected_columns）：目标表关联列使用源表已生成行的同值，保证外键一致
 - 固定值覆盖（value_overrides）：ITERATE_LIST 遍历模式下驱动列固定为当前轮值
-- INCR_FROM 策略按批次通过 Redis INCRBY 批量预取连续区间（文档 6.4）
+- INCR_FROM 策略按批次通过 Redis INCRBY 批量预取连续区间
 
 按列生成再组装为行（list[dict]），供原生批量 INSERT 使用。
 """
@@ -49,7 +49,7 @@ def generate_rows(
         column = field_config["column_name"]
         strategy_code = (field_config.get("strategy") or "DEFAULT").upper()
 
-        # AUTO_INCREMENT 主键：完全不出现在 INSERT 列列表中（PRD 4.4.3-A）
+        # AUTO_INCREMENT 主键：完全不出现在 INSERT 列列表中
         if strategy_code == SKIP_STRATEGY:
             continue
 
@@ -78,7 +78,7 @@ def generate_rows(
         if strategy_code == "INCR_FROM":
             if redis_client is None:
                 raise ValueError(f"INCR_FROM 策略需要 Redis 连接: {table_name}.{column}")
-            # Redis 批量预取本批连续区间（文档 6.4）
+            # Redis 批量预取本批连续区间
             params["range_start"] = prefetch_incr_range(
                 redis_client, task_id, table_name, column, count
             )

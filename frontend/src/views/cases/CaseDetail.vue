@@ -1,5 +1,5 @@
 <template>
-  <!-- Case 详情页（PRD 5.4）：只读配置 + 关联关系可视化 -->
+  <!-- Case 详情页只读配置 + 关联关系可视化 -->
   <div class="case-detail-page">
     <n-spin :show="loading">
       <template v-if="detail">

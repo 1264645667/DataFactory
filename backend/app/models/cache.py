@@ -1,4 +1,4 @@
-"""数据源表结构本地缓存模型（架构文档 4.1 DDL）。"""
+"""数据源表结构本地缓存模型。"""
 
 from datetime import datetime
 

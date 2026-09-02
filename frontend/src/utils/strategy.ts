@@ -1,8 +1,6 @@
 import type { ColumnInfo, StrategyCode } from '@/api/types'
 
-// ============================================================
-// 造数策略工具：策略选项、默认策略推断（PRD 4.4.3-A）、参数校验
-// ============================================================
+// 造数策略工具：策略选项、默认策略推断、参数校验
 
 export const STRATEGY_LABELS: Record<string, string> = {
   DEFAULT: 'Default（随机）',
@@ -49,7 +47,7 @@ export interface StrategyOption {
 }
 
 /**
- * 根据字段元数据返回可用的策略选项（PRD 4.4.4）
+ * 根据字段元数据返回可用的策略选项
  */
 export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
   // AUTO_INCREMENT 主键：仅 SKIP
@@ -105,7 +103,7 @@ export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
 }
 
 /**
- * 前端兜底默认策略推断（PRD 4.4.3-A，后端未返回 suggested_strategy 时使用）
+ * 前端兜底默认策略推断
  */
 export function inferDefaultStrategy(column: ColumnInfo): { strategy: StrategyCode; params: Record<string, unknown> } {
   const name = column.column_name.toLowerCase()
@@ -148,7 +146,7 @@ export function inferDefaultStrategy(column: ColumnInfo): { strategy: StrategyCo
 }
 
 /**
- * 校验策略参数合法性，返回错误提示（null 表示通过），按 PRD 4.4.5
+ * 校验策略参数合法性，返回错误提示（null 表示通过），
  */
 export function validateStrategyParams(
   column: ColumnInfo,
@@ -263,7 +261,7 @@ export function columnTypeColor(dataType: string): string {
 }
 
 /**
- * 判断源字段与目标字段类型是否兼容（PRD 4.4.6）
+ * 判断源字段与目标字段类型是否兼容
  */
 export function typesCompatible(source: ColumnInfo, target: ColumnInfo): boolean {
   const group = (dt: string): string => {

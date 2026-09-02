@@ -1,5 +1,5 @@
 <template>
-  <!-- 用户管理页（PRD 2.7，仅管理员）：待审批 Tab（红点）+ 全部用户 Tab -->
+  <!-- 用户管理页待审批 Tab（红点）+ 全部用户 Tab -->
   <div class="user-manage-page">
     <div class="gradient-border-card list-card">
       <n-tabs v-model:value="activeTab" type="line" @update:value="handleTabChange">
@@ -204,7 +204,7 @@ const permTitle = ref('分配权限')
 const checkedKeys = ref<string[]>([])
 const permTarget = ref<{ id: number; mode: 'approve' | 'edit' } | null>(null)
 
-// 权限树（PRD 2.3 菜单权限体系）
+// 权限树
 const permTreeData: TreeOption[] = PERMISSION_TREE.map((g) => ({
   label: g.label,
   key: g.key,

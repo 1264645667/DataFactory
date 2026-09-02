@@ -31,7 +31,7 @@ if (typeof window !== 'undefined') {
 /**
  * 判断当前是否属于「用户操作中」：
  * 最近 8 秒内有用户交互 → 弹出重登 Modal（保留页面状态）；
- * 否则视为页面加载期 → 直接跳转登录页（按 PRD 1.4.3）
+ * 否则视为页面加载期 → 直接跳转登录页
  */
 export function isUserInteracting(): boolean {
   return Date.now() - lastInteractionAt < 8000

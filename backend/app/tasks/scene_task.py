@@ -1,8 +1,8 @@
-"""场景执行 Celery 任务（DAG 调度，架构文档 6.9.1）
+"""场景执行 Celery 任务（DAG 调度）
 
 - 队列：high（CELERY_TASK_ROUTES: tasks.execute_scene）
 - 场景调度任务本身消耗资源极少（轮询等待 + 触发子任务），与造数执行同队列避免调度延迟
-- 任务结束写 SCENE_SUCCESS / SCENE_FAILED / SCENE_PARTIAL 消息通知（PRD 11.4）
+- 任务结束写 SCENE_SUCCESS / SCENE_FAILED / SCENE_PARTIAL 消息通知
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def execute_scene(self, scene_exec_id: int) -> dict:
     name="tasks.retry_scene_nodes",
 )
 def retry_scene_nodes(self, scene_exec_id: int, node_ids: list[str]) -> dict:
-    """重试失败节点入口（PRD 6.6.2）：仅重跑选中节点，结果追加到本次场景执行记录"""
+    """重试失败节点入口仅重跑选中节点，结果追加到本次场景执行记录"""
     logger.info(
         "retry_scene_nodes_start",
         scene_exec_id=scene_exec_id, node_ids=node_ids, celery_task_id=self.request.id,
@@ -65,7 +65,7 @@ def retry_scene_nodes(self, scene_exec_id: int, node_ids: list[str]) -> dict:
 
 
 def _notify_scene_result(result: dict, scene_exec_id: int) -> None:
-    """场景执行结束生成消息通知（SCENE_SUCCESS/SCENE_FAILED/SCENE_PARTIAL，PRD 11.4）"""
+    """场景执行结束生成消息通知（SCENE_SUCCESS/SCENE_FAILED/SCENE_PARTIAL）"""
     status_str = result.get("status")
     if status_str in (None, "skipped"):
         return

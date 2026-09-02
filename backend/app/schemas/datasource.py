@@ -1,4 +1,4 @@
-"""数据源模块请求/响应 Schema（API 清单 10.3 + PRD 第 8 章）。"""
+"""数据源模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class DatasourceCreateRequest(BaseModel):
-    """新增数据源（PRD 8.3 表单校验规则）。"""
+    """新增数据源。"""
 
     name: str = Field(min_length=1, max_length=50, description="全局唯一，不含特殊字符")
     db_type: str = Field(default="MySQL", description="一期仅支持 MySQL")
@@ -53,7 +53,7 @@ class DatasourceTestResponse(BaseModel):
 
 
 class DatasourceItem(BaseModel):
-    """数据源列表项（PRD 8.2.1 表格列）。"""
+    """数据源列表项。"""
 
     id: int
     name: str

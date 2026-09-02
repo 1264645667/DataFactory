@@ -18,7 +18,6 @@ from app.config import settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app import models  # noqa: E402,F401  # 确保全部模型被导入注册到 metadata
 
-# this is the Alembic Config object
 config = context.config
 
 # 注入数据库连接串（同步 pymysql）

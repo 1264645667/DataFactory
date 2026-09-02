@@ -1,4 +1,4 @@
-"""Case 管理业务服务（PRD 第 5 章）。
+"""Case 管理业务服务。
 
 覆盖：列表（分组过滤 + 筛选 + 分页，禁 SELECT config_json）、详情、覆盖式修改（含表结构变更检测）、
 逻辑删除、执行、复制（默认 xxx_copy）、执行历史（含统计）、批量执行（串行提交独立任务）。
@@ -67,7 +67,7 @@ async def list_cases(
     end_time: datetime | None = None,
     main_table: str | None = None,
 ) -> PageData[CaseListItem]:
-    """Case 列表（PRD 5.2：分组过滤 + 筛选 + 分页）。
+    """Case 列表（分组过滤 + 筛选 + 分页）。
 
     列表查询显式指定列（禁 SELECT config_json 大字段，避免列表页性能问题）。
     """
@@ -128,7 +128,7 @@ async def list_cases(
 
 
 async def get_case_detail(db: AsyncSession, *, current_user: User, case_id: int) -> CaseDetail:
-    """Case 详情（含 config_json，PRD 5.4）。"""
+    """Case 详情（含 config_json）。"""
     case = await get_case_checked(db, current_user, case_id)
     creator = await db.get(User, case.created_by)
     return CaseDetail(
@@ -157,7 +157,7 @@ async def get_case_detail(db: AsyncSession, *, current_user: User, case_id: int)
 async def _detect_schema_outdated(
     db: AsyncSession, case: Case, new_config: CaseConfig
 ) -> list[str]:
-    """表结构变更检测（PRD 5.3.2）：返回已失效（缓存中不存在）的字段名列表。
+    """表结构变更检测返回已失效（缓存中不存在）的字段名列表。
 
     检测范围：主表配置字段 + 关联目标字段。
     """
@@ -191,7 +191,7 @@ async def update_case(
     req: CaseUpdateRequest,
     ip: str | None,
 ) -> dict:
-    """修改 Case（覆盖式更新，PRD 5.5 不做版本管理）。
+    """修改 Case。
 
     返回 {"case_id", "schema_outdated", "outdated_fields"}：
     检测到表结构变更时 outdated_fields 非空（提示「以下字段配置可能失效」），保存仍生效。
@@ -231,7 +231,7 @@ async def update_case(
 async def delete_case(
     db: AsyncSession, *, current_user: User, case_id: int, ip: str | None
 ) -> None:
-    """逻辑删除 Case（is_deleted=1，历史执行记录保留，PRD 5.3.5）。"""
+    """逻辑删除 Case（is_deleted=1，历史执行记录保留）。"""
     case = await get_case_checked(db, current_user, case_id)
     case.is_deleted = 1
     await audit(
@@ -250,7 +250,7 @@ async def copy_case(
     case_name: str | None,
     ip: str | None,
 ) -> Case:
-    """复制 Case（PRD 5.3.3）：默认名「原Case名_copy」，默认名冲突时自动追加序号。"""
+    """复制 Case默认名「原Case名_copy」，默认名冲突时自动追加序号。"""
     source = await get_case_checked(db, current_user, case_id)
 
     if case_name:
@@ -314,7 +314,7 @@ async def execute_case(
     disable_fk_checks: bool = False,
     ip: str | None = None,
 ) -> str:
-    """执行 Case（PRD 5.3.1）：创建 ExecTask（当前配置快照）→ 下发 Celery → 返回 task_no。"""
+    """执行 Case创建 ExecTask（当前配置快照）→ 下发 Celery → 返回 task_no。"""
     if target_count > MAX_TARGET_COUNT:
         raise BizException(
             TARGET_COUNT_TOO_LARGE, f"目标造数量超过单次限制（最大 {MAX_TARGET_COUNT} 条）"
@@ -355,7 +355,7 @@ async def execute_case(
 async def batch_execute_cases(
     db: AsyncSession, *, current_user: User, req: CaseBatchExecuteRequest, ip: str | None
 ) -> list[str]:
-    """批量执行（PRD 5.3.6）：先统一校验，再逐个串行提交独立任务。"""
+    """批量执行先统一校验，再逐个串行提交独立任务。"""
     # 1. 统一校验（任何一个不合法则整体不提交，避免部分执行）
     cases: list[tuple[Case, int]] = []
     for item in req.items:
@@ -392,7 +392,7 @@ async def batch_execute_cases(
 async def get_case_history(
     db: AsyncSession, *, current_user: User, case_id: int, limit: int = 100
 ) -> dict:
-    """Case 执行历史（PRD 5.3.4）：记录列表 + 底部统计（总次数/成功次数/累计造数条数）。"""
+    """Case 执行历史记录列表 + 底部统计（总次数/成功次数/累计造数条数）。"""
     await get_case_checked(db, current_user, case_id)
 
     result = await db.execute(

@@ -1,5 +1,5 @@
 <template>
-  <!-- 银行卡号生成器（PRD 7.3.3） -->
+  <!-- 银行卡号生成器 -->
   <ToolCardBase
     tool-key="bankcard"
     title="银行卡号生成器"

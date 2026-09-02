@@ -1,4 +1,4 @@
-"""造数引擎模块请求/响应 Schema（API 清单 10.4 + PRD 第 4 章 + 架构文档 4.2）。"""
+"""造数引擎模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class TableItem(BaseModel):
-    """表列表项（PRD 4.3.1 展示列）。"""
+    """表列表项。"""
 
     table_name: str
     table_comment: str | None = None
@@ -21,7 +21,7 @@ class TableItem(BaseModel):
 
 
 class ColumnInfo(BaseModel):
-    """表字段详情（含 PRD 4.4.3-A 自动推断策略）。"""
+    """表字段详情。"""
 
     column_name: str
     column_comment: str | None = None
@@ -49,7 +49,7 @@ class IndexInfo(BaseModel):
     column_names: list[str] = []
 
 
-# ── Case 配置（架构文档 4.2 config_json 格式规范）──────────────
+# ── Case 配置──────────────
 
 
 class FieldConfig(BaseModel):

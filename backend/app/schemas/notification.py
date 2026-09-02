@@ -1,4 +1,4 @@
-"""消息通知模块请求/响应 Schema（API 清单 10.10 + PRD 第 11 章）。"""
+"""消息通知模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -12,7 +12,7 @@ class UnreadCountResponse(BaseModel):
 
 
 class NotificationItem(BaseModel):
-    """消息列表项（PRD 11.4 消息内容字段）。"""
+    """消息列表项。"""
 
     id: int
     msg_type: str = Field(

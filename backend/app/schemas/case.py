@@ -1,4 +1,4 @@
-"""Case 管理模块请求/响应 Schema（API 清单 10.5 + PRD 第 5 章）。"""
+"""Case 管理模块请求/响应 Schema。"""
 
 from datetime import datetime
 
@@ -8,7 +8,7 @@ from app.schemas.engine import CaseConfig
 
 
 class CaseListItem(BaseModel):
-    """Case 列表项（PRD 5.2.2 表格列）。"""
+    """Case 列表项。"""
 
     id: int
     case_name: str
@@ -27,7 +27,7 @@ class CaseListItem(BaseModel):
 
 
 class CaseDetail(BaseModel):
-    """Case 详情（含 config_json，PRD 5.4）。"""
+    """Case 详情（含 config_json）。"""
 
     id: int
     case_name: str
@@ -48,14 +48,14 @@ class CaseDetail(BaseModel):
 
 
 class CaseUpdateRequest(BaseModel):
-    """修改 Case 配置（覆盖式更新，PRD 5.5 不做版本管理）。"""
+    """修改 Case 配置。"""
 
     case_name: str = Field(min_length=1, max_length=200)
     config: CaseConfig
 
 
 class CaseExecuteRequest(BaseModel):
-    """执行 Case（PRD 5.3.1：只需输入造数条数，可覆盖执行参数）。"""
+    """执行 Case（只需输入造数条数，可覆盖执行参数）。"""
 
     target_count: int = Field(gt=0)
     batch_size: int | None = Field(default=None, gt=0)
@@ -80,7 +80,7 @@ class CaseCopyResponse(BaseModel):
 
 
 class CaseHistoryItem(BaseModel):
-    """Case 执行历史项（PRD 5.3.4）。"""
+    """Case 执行历史项。"""
 
     task_no: str
     target_count: int
@@ -101,7 +101,7 @@ class CaseBatchExecuteItem(BaseModel):
 
 
 class CaseBatchExecuteRequest(BaseModel):
-    """批量执行（PRD 5.3.6：每个 Case 独立条数，串行提交）。"""
+    """批量执行（每个 Case 独立条数，串行提交）。"""
 
     items: list[CaseBatchExecuteItem] = Field(min_length=1)
 

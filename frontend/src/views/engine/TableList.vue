@@ -1,5 +1,5 @@
 <template>
-  <!-- 造数引擎 · 表列表页（PRD 4.1/4.2/4.3） -->
+  <!-- 造数引擎 · 表列表页 -->
   <div class="engine-page">
     <!-- 数据源选择栏（吸顶） -->
     <div class="ds-bar glass-card">
@@ -115,7 +115,7 @@ const statusLightClass = computed(() => {
   return d.online ? 'light-green' : 'light-red'
 })
 
-// 本地过滤 + 排序（PRD 4.3.2：搜索本地过滤无需请求后端）
+// 本地过滤 + 排序（搜索本地过滤无需请求后端）
 const filteredTables = computed(() => {
   let data = tables.value
   const kw = keyword.value.trim().toLowerCase()

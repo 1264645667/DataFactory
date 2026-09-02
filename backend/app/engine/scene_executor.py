@@ -1,11 +1,11 @@
-"""场景 DAG 调度执行器（架构文档 6.9，同步实现）
+"""场景 DAG 调度执行器
 
 职责：
 - 拓扑分层（Kahn，dep_analyzer.build_layers）
 - 初始化场景进度 Redis Key（df:scene:progress / df:scene:node_progress，24h TTL）
 - 逐层提交节点：每节点创建独立 df_exec_task，下发 tasks.execute_data_gen Celery 任务
 - 轮询等待层完成（每 2 秒读 Redis 节点进度）→ 检查 abort 失败策略 → 取消后续层
-- 汇总场景终态；支持 retry_failed_nodes 重试失败节点（PRD 6.6.2）
+- 汇总场景终态；支持 retry_failed_nodes 重试失败节点
 
 节点任务完成后的回写（Redis 节点进度 + df_scene_node_exec）由 tasks.execute_data_gen 完成，
 本调度器只读 Redis 做终态轮询。
@@ -28,7 +28,7 @@ from app.models import Case, ExecTask, Scene, SceneExec, SceneNodeExec
 
 logger = structlog.get_logger(__name__)
 
-# ---------------- 状态枚举（与架构文档 4.1 DDL 注释一致） ----------------
+# ---------------- 状态枚举 ----------------
 # df_scene_exec.status
 SCENE_STATUS_PENDING = 0
 SCENE_STATUS_RUNNING = 1
@@ -54,7 +54,7 @@ REDIS_SCENE_STATUS_MAP = {
     SCENE_STATUS_ABORTED: "aborted",
 }
 
-# ---------------- Redis Key（文档 5.1/5.2） ----------------
+# ---------------- Redis Key ----------------
 SCENE_PROGRESS_KEY = "df:scene:progress:{scene_exec_no}"
 SCENE_NODE_PROGRESS_KEY = "df:scene:node_progress:{scene_exec_no}"
 SCENE_PROGRESS_TTL = 24 * 3600     # 场景进度 24h
@@ -69,12 +69,10 @@ def _decode(value: Any) -> Any:
     return value
 
 
-# ------------------------------------------------------------------
 # 进度初始化与更新
-# ------------------------------------------------------------------
 
 def _init_scene_progress(scene_exec: SceneExec, nodes: list[dict], layers: list[list[str]]) -> None:
-    """初始化场景进度 Redis Key（文档 5.2）"""
+    """初始化场景进度 Redis Key"""
     now = str(int(time.time()))
     total_rows = sum(int(node.get("target_count") or 0) for node in nodes)
     layer_of = {nid: layer_no for layer_no, layer in enumerate(layers) for nid in layer}
@@ -138,12 +136,10 @@ def _refresh_scene_progress(session, scene_exec: SceneExec) -> None:
     )
 
 
-# ------------------------------------------------------------------
 # 节点提交与层等待
-# ------------------------------------------------------------------
 
 def _create_node_exec_task(session, scene_exec: SceneExec, case: Case, target_count: int) -> ExecTask:
-    """为场景节点创建独立的造数执行任务（复用单 Case 执行体系，文档 6.9.2）"""
+    """为场景节点创建独立的造数执行任务（复用单 Case 执行体系）"""
     exec_task = ExecTask(
         task_no=f"TK{next_snowflake_id()}",
         case_id=case.id,
@@ -227,7 +223,7 @@ def _submit_layer_nodes(session, scene_exec: SceneExec, layer_no: int, layer_nod
 
 def _wait_for_layer_completion(scene_exec_no: str, node_ids: list[str],
                                timeout: int = LAYER_WAIT_TIMEOUT) -> None:
-    """轮询 Redis 节点进度，等待本层全部节点达到终态（每 2 秒，文档 6.9.1-3b）"""
+    """轮询 Redis 节点进度，等待本层全部节点达到终态（每 2 秒）"""
     node_key = SCENE_NODE_PROGRESS_KEY.format(scene_exec_no=scene_exec_no)
     deadline = time.time() + timeout
     pending = set(node_ids)
@@ -247,7 +243,7 @@ def _wait_for_layer_completion(scene_exec_no: str, node_ids: list[str],
 
 
 def _collect_abort_nodes(session, scene_exec_id: int, layer_node_ids: list[str]) -> list[str]:
-    """收集本层中「失败且失败策略=abort」的节点（文档 6.9.1-3c）"""
+    """收集本层中「失败且失败策略=abort」的节点"""
     rows = (
         session.query(SceneNodeExec)
         .filter(
@@ -264,7 +260,7 @@ def _collect_abort_nodes(session, scene_exec_id: int, layer_node_ids: list[str])
 
 def _cancel_remaining_nodes(session, scene_exec: SceneExec, remaining_node_ids: list[str],
                             node_map: dict[str, dict], layer_of: dict[str, int]) -> None:
-    """取消后续所有层的节点（abort 策略触发，PRD 6.4.3）"""
+    """取消后续所有层的节点（abort 策略触发）"""
     now = datetime.now()
     for node_id in remaining_node_ids:
         node_exec = (
@@ -299,9 +295,7 @@ def _cancel_remaining_nodes(session, scene_exec: SceneExec, remaining_node_ids: 
     session.commit()
 
 
-# ------------------------------------------------------------------
 # 场景终态
-# ------------------------------------------------------------------
 
 def _finalize_scene(session, scene_exec: SceneExec, aborted: bool) -> int:
     """汇总场景终态：更新 df_scene_exec / df_scene / Redis 进度"""
@@ -315,7 +309,7 @@ def _finalize_scene(session, scene_exec: SceneExec, aborted: bool) -> int:
     total_rows = sum(int(row.success_count or 0) for row in rows)
 
     if aborted:
-        # 触发终止策略 → 场景失败（PRD 6.4.3）
+        # 触发终止策略 → 场景失败
         final = SCENE_STATUS_FAILED
     elif failed_nodes == 0:
         final = SCENE_STATUS_SUCCESS
@@ -395,12 +389,10 @@ def _mark_scene_failed(session, scene_exec: SceneExec, message: str) -> None:
         pass
 
 
-# ------------------------------------------------------------------
 # 对外入口
-# ------------------------------------------------------------------
 
 def execute_scene_task(scene_exec_id: int) -> dict:
-    """场景执行主入口：DAG 分层调度，不直接插入数据（文档 6.9.1）"""
+    """场景执行主入口：DAG 分层调度，不直接插入数据"""
     session = SyncSessionLocal()
     try:
         scene_exec = session.get(SceneExec, scene_exec_id)
@@ -488,7 +480,7 @@ def execute_scene_task(scene_exec_id: int) -> dict:
 
 
 def retry_failed_nodes(scene_exec_id: int, node_ids: list[str]) -> dict:
-    """重试失败节点（PRD 6.6.2）
+    """重试失败节点
 
     - 仅重新执行选中的失败/已取消节点，造数条数使用原配置
     - 重试结果追加到本次场景执行记录（不新建场景执行记录）

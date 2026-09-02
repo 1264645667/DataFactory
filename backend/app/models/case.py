@@ -1,4 +1,4 @@
-"""造数 Case 模型（架构文档 4.1 DDL + 11.2 补充索引）。"""
+"""造数 Case 模型。"""
 
 from datetime import datetime
 
@@ -57,7 +57,7 @@ class Case(Base):
         Index("idx_group_ds", "group_type", "datasource_id"),
         Index("idx_creator", "created_by"),
         Index("idx_main_table", "datasource_id", "main_table"),
-        # 文档 11.2 补充索引：列表页按创建时间倒序 + 分组过滤
+        # 补充索引：列表页按创建时间倒序 + 分组过滤
         Index("idx_group_created_at", "group_type", "is_deleted", "created_at"),
         {"comment": "造数Case表", "mysql_charset": "utf8mb4", "mysql_engine": "InnoDB"},
     )

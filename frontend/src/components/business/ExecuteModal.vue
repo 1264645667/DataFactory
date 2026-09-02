@@ -1,5 +1,5 @@
 <template>
-  <!-- 创建并执行弹窗（PRD 4.4.7）：普通模式 / 遍历模式两种形态 -->
+  <!-- 创建并执行弹窗普通模式 / 遍历模式两种形态 -->
   <n-modal :show="show" preset="card" :title="modalTitle" style="width: 560px" @update:show="close">
     <n-form label-placement="left" label-width="90px">
       <n-form-item label="Case 名称" required :feedback="nameError" :validation-status="nameError ? 'error' : undefined">
@@ -46,7 +46,7 @@
       </template>
     </div>
 
-    <!-- AUTO_INCREMENT 预检提示（PRD 4.4.3-B） -->
+    <!-- AUTO_INCREMENT 预检提示 -->
     <n-alert v-if="autoIncrementColumn" type="warning" class="mt-3" :show-icon="false">
       检测到主键 {{ autoIncrementColumn }} 为 AUTO_INCREMENT，造数时将由数据库自动填充。
     </n-alert>

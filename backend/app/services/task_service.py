@@ -1,4 +1,4 @@
-"""任务进度业务服务（架构文档 6.6/6.7）。
+"""任务进度业务服务。
 
 覆盖：任务实时进度（Redis 聚合，miss 回退 MySQL）、强制停止（celery revoke）、
 重试失败批次（断点续传，调 engine.executor.retry_failed_batches）、任务详情（含分批日志）。
@@ -34,13 +34,13 @@ from app.schemas.task import (
 
 logger = structlog.get_logger(__name__)
 
-# Redis Key（文档 5.1/5.2）
+# Redis Key
 PROGRESS_KEY = "df:task:progress:{task_no}"
 TABLE_PROGRESS_KEY = "df:task:table_progress:{task_no}"
 RATE_KEY = "df:task:rate:{task_no}:{table}"
 PROGRESS_TTL = 24 * 3600
 
-# df_exec_task.status → 进度字符串（文档 6.6.2）
+# df_exec_task.status → 进度字符串
 _TASK_STATUS_STR = {
     0: "submitted",
     1: "running",
@@ -75,7 +75,7 @@ async def get_task_checked(db: AsyncSession, current_user: User, task_no: str) -
 
 
 async def _get_insert_rate(task_no: str, table: str) -> float:
-    """最近 3 秒滑动窗口插入速率（条/秒，文档 5.2）。"""
+    """最近 3 秒滑动窗口插入速率（条/秒）。"""
     try:
         records = await redis_client.lrange(RATE_KEY.format(task_no=task_no, table=table), 0, -1)
     except Exception:
@@ -96,7 +96,7 @@ async def _get_insert_rate(task_no: str, table: str) -> float:
 async def get_task_progress(
     db: AsyncSession, *, current_user: User, task_no: str
 ) -> TaskProgressResponse:
-    """任务实时进度（GET /tasks/{task_no}/progress，文档 6.6.2 响应结构）。
+    """任务实时进度。
 
     读 Redis df:task:progress + table_progress + rate 滑动窗口聚合；
     Redis miss（已过期）回退查 MySQL 历史数据。
@@ -237,7 +237,7 @@ async def get_task_progress(
 async def abort_task(
     db: AsyncSession, *, current_user: User, task_no: str, ip: str | None
 ) -> None:
-    """强制停止任务（文档 6.6.5）：celery revoke terminate=True + 状态置已中止。
+    """强制停止任务celery revoke terminate=True + 状态置已中止。
 
     仅本人或管理员可操作；已结束任务返回 1306。
     """
@@ -276,7 +276,7 @@ async def abort_task(
 async def retry_failed_batches(
     db: AsyncSession, *, current_user: User, task_no: str, ip: str | None
 ) -> None:
-    """重试失败批次（断点续传，PRD 4.5.2 手动重试入口）。
+    """重试失败批次。
 
     调 engine.executor.retry_failed_batches 重新提交执行（同步重活，放线程池异步执行，
     进度通过 /tasks/{task_no}/progress 轮询观察）。
@@ -304,7 +304,7 @@ async def retry_failed_batches(
 async def get_task_detail(
     db: AsyncSession, *, current_user: User, task_no: str
 ) -> TaskDetailResponse:
-    """任务详情（含 df_exec_batch_log 分批日志，PRD 3.5 执行详情抽屉）。"""
+    """任务详情。"""
     task = await get_task_checked(db, current_user, task_no)
     result = await db.execute(
         select(ExecBatchLog)
