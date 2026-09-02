@@ -16,7 +16,7 @@ from app.api.deps import group_filter_value
 from app.core.redis_client import redis_client
 from app.models.case import Case
 from app.models.scene import Scene, SceneExec
-from app.models.task import ExecTask
+from app.models.task import ExecBatchLog, ExecTask
 from app.models.user import User
 from app.schemas.overview import (
     ExecRecordItem,
@@ -262,26 +262,35 @@ async def get_status_dist(db: AsyncSession, *, current_user: User, days: int) ->
 
 
 async def get_table_top10(db: AsyncSession, *, current_user: User, days: int) -> list[TableTopItem]:
-    """表操作量 Top10 柱状图（PRD 3.4-③）：按主表聚合成功插入条数。"""
+    """表操作量 Top10 柱状图（PRD 3.4-③）：按实际插入表聚合成功行数。
+
+    统计口径：df_exec_batch_log 中成功批次（status=1）的 batch_size 之和，
+    关联表与主表各自独立成项（ExecTask.success_count 为全表合计，无法按表拆分）。
+    """
     group_type = group_filter_value(current_user)
     task_cond = _group_conditions(ExecTask, group_type)
     start = _today_start() - timedelta(days=days - 1)
 
     result = await db.execute(
         select(
-            ExecTask.main_table,
+            ExecBatchLog.table_name,
             ExecTask.datasource_name,
-            func.coalesce(func.sum(ExecTask.success_count), 0).label("row_count"),
+            func.coalesce(func.sum(ExecBatchLog.batch_size), 0).label("row_count"),
             func.count(distinct(ExecTask.case_id)).label("case_count"),
         )
-        .where(ExecTask.created_at >= start, *task_cond)
-        .group_by(ExecTask.main_table, ExecTask.datasource_name)
-        .order_by(func.sum(ExecTask.success_count).desc())
+        .join(ExecTask, ExecBatchLog.task_id == ExecTask.id)
+        .where(
+            ExecTask.created_at >= start,
+            ExecBatchLog.status == 1,  # 1=成功批次（BATCH_STATUS_SUCCESS）
+            *task_cond,
+        )
+        .group_by(ExecBatchLog.table_name, ExecTask.datasource_name)
+        .order_by(func.sum(ExecBatchLog.batch_size).desc())
         .limit(10)
     )
     return [
         TableTopItem(
-            table_name=row.main_table,
+            table_name=row.table_name,
             datasource_name=row.datasource_name,
             row_count=int(row.row_count or 0),
             case_count=int(row.case_count or 0),
