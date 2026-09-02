@@ -155,6 +155,11 @@
           </div>
           <EmptyState v-if="associations.length === 0" description="暂无关联配置" :size="70" />
         </div>
+        <!-- 关联链路实时预览（多级关联拓扑图） -->
+        <div v-if="associations.length > 0" class="assoc-graph-preview">
+          <h4 class="assoc-add-title">关联链路预览</h4>
+          <AssocGraph :main-table="tableName" :associations="associations" />
+        </div>
         <!-- 添加关联（支持多级：源表可以是主表或任一已关联的表） -->
         <div class="assoc-add">
           <h4 class="assoc-add-title">添加关联（支持多级）</h4>
@@ -244,6 +249,7 @@ import type {
 } from '@/api/types'
 import StrategyParams from '@/components/business/StrategyParams.vue'
 import ExecuteModal from '@/components/business/ExecuteModal.vue'
+import AssocGraph from '@/components/business/AssocGraph.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
@@ -805,6 +811,11 @@ onMounted(async () => {
   margin: 0 0 10px;
   font-size: 13px;
   color: #a78bfa;
+}
+.assoc-graph-preview {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 14px;
+  margin-bottom: 14px;
 }
 .modal-actions {
   display: flex;
