@@ -239,6 +239,8 @@ export interface CaseConfigJson {
   main_table: string
   field_configs: FieldStrategyConfig[]
   associations: Association[]
+  /** 关联表字段策略覆盖：{表名: 字段配置数组}，缺省的关联表由执行器自动推断 */
+  related_field_configs?: Record<string, FieldStrategyConfig[]>
 }
 
 /** 保存/执行 Case 请求体（后端要求 config 嵌套） */

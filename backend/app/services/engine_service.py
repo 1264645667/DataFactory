@@ -415,18 +415,21 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
         raise BizException(ITERATE_LIST_DUPLICATE)
 
     # 3. 策略合法性 + 策略参数校验（SKIP 不注册策略，执行期由引擎处理）
-    for fc in field_configs:
+    def _validate_field_strategy(fc, table: str) -> None:
         strategy_code = (fc.strategy or "DEFAULT").upper()
         if strategy_code == "SKIP":
-            continue
+            return
         try:
             strategy = get_strategy(strategy_code)
         except ValueError as e:
-            raise BizException(STRATEGY_PARAM_INVALID, f"字段 {fc.column_name}：{e}") from e
+            raise BizException(STRATEGY_PARAM_INVALID, f"字段 {table}.{fc.column_name}：{e}") from e
         try:
             strategy.validate(fc.model_dump(), dict(fc.strategy_params or {}))
         except ValueError as e:
-            raise BizException(STRATEGY_PARAM_INVALID, f"字段 {fc.column_name}：{e}") from e
+            raise BizException(STRATEGY_PARAM_INVALID, f"字段 {table}.{fc.column_name}：{e}") from e
+
+    for fc in field_configs:
+        _validate_field_strategy(fc, config.main_table)
 
     # 4. 关联配置校验（支持多级：源表可以是主表或任一已关联的表，形成 A→B→C 链式）
     associations = config.associations or []
@@ -504,6 +507,24 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
         build_insert_order(config.main_table, [a.model_dump() for a in associations])
     except ValueError as e:
         raise BizException(ASSOCIATION_CYCLE, str(e)) from e
+
+    # 6. 关联表字段策略覆盖（related_field_configs）校验
+    related_overrides = config.related_field_configs or {}
+    for table, related_configs in related_overrides.items():
+        # 覆盖的表必须已纳入造数范围（关联目标表），否则配置无意义
+        if table not in scope_tables or table == config.main_table:
+            raise BizException(
+                CASE_CONFIG_INVALID,
+                f"关联表字段配置的表 {table} 未纳入本 Case 造数范围（须为某个关联目标表）",
+            )
+        for fc in related_configs:
+            # 遍历驱动只能是主表字段（驱动全 Case 行数），关联表禁止 ITERATE_LIST
+            if (fc.strategy or "").upper() == "ITERATE_LIST":
+                raise BizException(
+                    CASE_CONFIG_INVALID,
+                    f"关联表字段不支持按序遍历插入策略：{table}.{fc.column_name}",
+                )
+            _validate_field_strategy(fc, table)
 
 
 # ── Case 保存与执行 ──────────────────────────────────────────────

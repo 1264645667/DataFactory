@@ -89,6 +89,8 @@ class CaseConfig(BaseModel):
     main_table: str
     field_configs: list[FieldConfig] = []
     associations: list[AssociationConfig] = []
+    # 关联表字段策略覆盖：{表名: [FieldConfig]}，缺省的关联表由执行器从缓存自动推断
+    related_field_configs: dict[str, list[FieldConfig]] = {}
 
 
 # ── 创建 / 执行 ───────────────────────────────────────────────

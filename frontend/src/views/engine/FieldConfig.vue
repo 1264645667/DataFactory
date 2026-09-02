@@ -19,14 +19,14 @@
       </div>
     </div>
 
-    <n-spin :show="pageLoading">
+    <n-spin :show="pageLoading || relatedTabLoading">
       <!-- 表结构变更提示（1402） -->
       <n-alert v-if="outdatedFields.length > 0" type="warning" class="mb-3" closable>
         检测到表结构已更新，以下字段配置可能失效：{{ outdatedFields.join('、') }}
       </n-alert>
 
-      <!-- 表基本信息卡片（可折叠） -->
-      <n-collapse class="mb-3">
+      <!-- 表基本信息卡片（可折叠，仅主表 Tab 展示） -->
+      <n-collapse v-if="activeTable === tableName" class="mb-3">
         <n-collapse-item title="表基本信息" name="info">
           <n-descriptions v-if="tableInfo" :column="4" label-placement="left" size="small">
             <n-descriptions-item label="表名">{{ tableInfo.table_name }}</n-descriptions-item>
@@ -55,6 +55,24 @@
 
       <!-- 字段配置表格 -->
       <div class="field-card gradient-border-card">
+        <!-- 表切换 Tab：主表 + 各关联表（有关联的表才参与造数，才可配置字段策略） -->
+        <n-tabs
+          v-if="tableTabs.length > 1"
+          :value="activeTable"
+          type="card"
+          size="small"
+          class="table-tabs"
+          @update:value="switchTable"
+        >
+          <n-tab v-for="t in tableTabs" :key="t" :name="t">
+            <n-tooltip placement="top" :disabled="t.length <= 28">
+              <template #trigger>
+                <span class="tab-label">{{ t === tableName ? `${truncateName(t)}（主表）` : truncateName(t) }}</span>
+              </template>
+              {{ t }}
+            </n-tooltip>
+          </n-tab>
+        </n-tabs>
         <div class="field-toolbar">
           <n-input v-model:value="fieldKeyword" size="small" clearable placeholder="按字段名 / 类型搜索" style="width: 220px">
             <template #prefix><n-icon><SearchOutline /></n-icon></template>
@@ -103,17 +121,24 @@
                 <td>
                   <!-- SKIP 行：数据库自动填充，禁用 -->
                   <n-tag v-if="row.strategy === 'SKIP'" size="small" type="default">数据库自动填充</n-tag>
+                  <!-- 关联表中被关联注入的列：值来自源表，策略不生效 -->
+                  <n-tooltip v-else-if="isInjectedColumn(row.column.column_name)" placement="top">
+                    <template #trigger>
+                      <n-tag size="small" type="info">关联注入</n-tag>
+                    </template>
+                    该字段值由关联源字段注入，造数策略不生效
+                  </n-tooltip>
                   <n-select
                     v-else
                     :value="row.strategy"
-                    :options="getStrategyOptions(row.column)"
+                    :options="strategyOptionsFor(row.column)"
                     size="small"
                     @update:value="(v: StrategyCode) => changeStrategy(row, v)"
                   />
                 </td>
                 <td>
                   <StrategyParams
-                    v-if="row.strategy !== 'SKIP'"
+                    v-if="row.strategy !== 'SKIP' && !isInjectedColumn(row.column.column_name)"
                     :strategy="row.strategy"
                     :column="row.column"
                     :sibling-columns="siblingNumericColumns(row.column.column_name)"
@@ -123,16 +148,17 @@
                 </td>
                 <td>
                   <div class="assoc-tags">
+                    <!-- 主表 Tab：展示以该字段为源发起的关联；关联表 Tab：展示指向该字段的关联（来源） -->
                     <n-tag
-                      v-for="a in assocsOf(row.column.column_name)"
-                      :key="`${a.target_table}.${a.target_column}`"
+                      v-for="a in assocsForColumn(row.column.column_name)"
+                      :key="`${a.source_table || tableName}.${a.source_column}->${a.target_table}.${a.target_column}`"
                       size="small"
                       closable
                       @close="removeAssoc(a)"
                     >
-                      {{ a.target_table }}.{{ a.target_column }}
+                      {{ activeTable === tableName ? `${a.target_table}.${a.target_column}` : `${a.source_table || tableName}.${a.source_column}` }}
                     </n-tag>
-                    <span v-if="assocsOf(row.column.column_name).length === 0" class="dim">-</span>
+                    <span v-if="assocsForColumn(row.column.column_name).length === 0" class="dim">-</span>
                   </div>
                 </td>
               </tr>
@@ -152,7 +178,7 @@
             <span class="assoc-source">{{ a.source_table || tableName }}.{{ a.source_column }}</span>
             <span class="dim">→</span>
             <span class="assoc-target">{{ a.target_table }}.{{ a.target_column }}</span>
-            <n-button text size="tiny" type="error" @click="associations.splice(i, 1)">删除</n-button>
+            <n-button text size="tiny" type="error" @click="removeAssocByIndex(i)">删除</n-button>
           </div>
           <EmptyState v-if="associations.length === 0" description="暂无关联配置" :size="70" />
         </div>
@@ -242,6 +268,7 @@ import { engineApi } from '@/api/engine'
 import { casesApi } from '@/api/cases'
 import type {
   Association,
+  CaseConfigJson,
   ColumnInfo,
   FieldStrategyConfig,
   IndexInfo,
@@ -291,13 +318,75 @@ const fieldKeyword = ref('')
 const dirty = ref(false)
 const existingCaseName = ref('')
 
+// ---------------- 关联表字段配置（related_field_configs） ----------------
+/** 当前展示的表（主表或某个关联表） */
+const activeTable = ref(tableName)
+/** 关联表字段配置行：{表名: FieldRow[]}，仅已加载的表有数据 */
+const relatedFieldRows = ref<Record<string, FieldRow[]>>({})
+const relatedTabLoading = ref(false)
+
+/** 参与造数的关联表（关联目标表去重，保持声明顺序） */
+const relatedTables = computed(() => [...new Set(associations.value.map((a) => a.target_table))])
+/** Tab 列表：主表 + 各关联表 */
+const tableTabs = computed(() => [tableName, ...relatedTables.value])
+/** 当前 Tab 展示的字段行 */
+const currentRows = computed<FieldRow[]>(() =>
+  activeTable.value === tableName ? fieldRows.value : (relatedFieldRows.value[activeTable.value] ?? []),
+)
+
 const filteredRows = computed(() => {
   const kw = fieldKeyword.value.trim().toLowerCase()
-  if (!kw) return fieldRows.value
-  return fieldRows.value.filter(
+  if (!kw) return currentRows.value
+  return currentRows.value.filter(
     (r) => r.column.column_name.toLowerCase().includes(kw) || r.column.column_type.toLowerCase().includes(kw),
   )
 })
+
+/** 表名过长时截断展示（完整名见 tooltip） */
+function truncateName(name: string): string {
+  return name.length > 28 ? `${name.slice(0, 25)}...` : name
+}
+
+/**
+ * 加载关联表字段并初始化策略行（编辑模式回显已保存配置）。
+ * 表结构变更检测：已保存但缓存中不存在的字段记入 outdatedFields。
+ */
+async function loadRelatedTableRows(table: string, savedConfigs?: FieldStrategyConfig[]): Promise<void> {
+  const res = await engineApi.columns(datasourceId, table)
+  const cfgMap = new Map((savedConfigs ?? []).map((f) => [f.column_name, f]))
+  if (savedConfigs) {
+    const existingNames = new Set(res.data.map((c) => c.column_name))
+    outdatedFields.value.push(
+      ...savedConfigs.filter((f) => !existingNames.has(f.column_name)).map((f) => `${table}.${f.column_name}`),
+    )
+  }
+  relatedFieldRows.value[table] = res.data.map((c) => {
+    const saved = cfgMap.get(c.column_name)
+    if (saved) {
+      return { column: c, strategy: saved.strategy, params: { ...(saved.strategy_params ?? {}) } }
+    }
+    const inferred =
+      c.suggested_strategy != null
+        ? { strategy: c.suggested_strategy as StrategyCode, params: (c.suggested_params ?? {}) as Record<string, unknown> }
+        : inferDefaultStrategy(c)
+    return { column: c, strategy: inferred.strategy, params: { ...inferred.params } }
+  })
+}
+
+/** 切换表 Tab：关联表首次切换时懒加载字段 */
+async function switchTable(table: string): Promise<void> {
+  if (table === activeTable.value) return
+  activeTable.value = table
+  fieldKeyword.value = ''
+  if (table !== tableName && !relatedFieldRows.value[table]) {
+    relatedTabLoading.value = true
+    try {
+      await loadRelatedTableRows(table)
+    } finally {
+      relatedTabLoading.value = false
+    }
+  }
+}
 
 function isRequired(c: ColumnInfo): boolean {
   return !c.is_nullable && c.column_default == null
@@ -337,6 +426,11 @@ async function loadPage(): Promise<void> {
         }
       })
       associations.value = [...cfg.associations]
+      // 回显关联表字段策略（逐表加载字段元数据并应用已保存配置）
+      const relatedOverrides = cfg.related_field_configs ?? {}
+      for (const [table, savedConfigs] of Object.entries(relatedOverrides)) {
+        await loadRelatedTableRows(table, savedConfigs)
+      }
       dirty.value = false
     }
   } finally {
@@ -345,11 +439,32 @@ async function loadPage(): Promise<void> {
 }
 
 // ---------------- 策略操作 ----------------
+/** 当前 Tab 下某列是否为被关联注入的目标列（值来自源表，策略不生效） */
+function isInjectedColumn(columnName: string): boolean {
+  if (activeTable.value === tableName) return false
+  return associations.value.some((a) => a.target_table === activeTable.value && a.target_column === columnName)
+}
+
+/** 当前 Tab 下某列的关联标签：主表展示以该字段为源的关联；关联表展示指向该字段的关联 */
+function assocsForColumn(columnName: string): Association[] {
+  if (activeTable.value === tableName) {
+    return associations.value.filter((a) => (a.source_table || tableName) === tableName && a.source_column === columnName)
+  }
+  return associations.value.filter((a) => a.target_table === activeTable.value && a.target_column === columnName)
+}
+
+/** 策略选项：关联表禁用 ITERATE_LIST（遍历驱动只能是主表字段） */
+function strategyOptionsFor(column: ColumnInfo) {
+  const opts = getStrategyOptions(column)
+  if (activeTable.value === tableName) return opts
+  return opts.filter((o) => o.value !== 'ITERATE_LIST')
+}
+
 function changeStrategy(row: FieldRow, v: StrategyCode): void {
   row.strategy = v
   row.params = {}
   dirty.value = true
-  // ITERATE_LIST 唯一性校验
+  // ITERATE_LIST 唯一性校验（仅主表可选）
   if (v === 'ITERATE_LIST') {
     const count = fieldRows.value.filter((r) => r.strategy === 'ITERATE_LIST').length
     if (count > 1) {
@@ -359,20 +474,24 @@ function changeStrategy(row: FieldRow, v: StrategyCode): void {
   }
 }
 
-/** 校验全部字段配置，返回是否通过 */
+/** 校验全部字段配置（主表 + 已加载的关联表），返回是否通过 */
 function validateAll(): boolean {
-  for (const row of fieldRows.value) {
+  const allRows: Array<{ table: string; row: FieldRow }> = [
+    ...fieldRows.value.map((r) => ({ table: tableName, row: r })),
+    ...Object.entries(relatedFieldRows.value).flatMap(([t, rows]) => rows.map((r) => ({ table: t, row: r }))),
+  ]
+  for (const { table, row } of allRows) {
     const err = validateStrategyParams(row.column, row.strategy, row.params)
     if (err) {
-      window.$message.error(`字段「${row.column.column_name}」：${err}`)
+      window.$message.error(`字段「${table}.${row.column.column_name}」：${err}`)
       return false
     }
   }
   return true
 }
 
-function buildFieldConfigs(): FieldStrategyConfig[] {
-  return fieldRows.value.map((r) => ({
+function toFieldConfig(r: FieldRow): FieldStrategyConfig {
+  return {
     column_name: r.column.column_name,
     data_type: r.column.data_type,
     column_type: r.column.column_type,
@@ -380,12 +499,35 @@ function buildFieldConfigs(): FieldStrategyConfig[] {
     is_primary_key: !!r.column.is_primary_key,
     strategy: r.strategy,
     strategy_params: r.params,
-  }))
+  }
 }
 
-/** DERIVED 派生策略的源字段选项：同表其他数字类型且非 SKIP 的字段 */
+function buildFieldConfigs(): FieldStrategyConfig[] {
+  return fieldRows.value.map(toFieldConfig)
+}
+
+/** 关联表字段策略覆盖（仅已加载的表；保存进 related_field_configs） */
+function buildRelatedFieldConfigs(): Record<string, FieldStrategyConfig[]> {
+  const result: Record<string, FieldStrategyConfig[]> = {}
+  for (const [table, rows] of Object.entries(relatedFieldRows.value)) {
+    result[table] = rows.map(toFieldConfig)
+  }
+  return result
+}
+
+function buildConfig(): CaseConfigJson {
+  return {
+    version: '1.0',
+    main_table: tableName,
+    field_configs: buildFieldConfigs(),
+    associations: associations.value,
+    related_field_configs: buildRelatedFieldConfigs(),
+  }
+}
+
+/** DERIVED 派生策略的源字段选项：当前表其他数字类型且非 SKIP 的字段 */
 function siblingNumericColumns(currentColumn: string): Array<{ label: string; value: string }> {
-  return fieldRows.value
+  return currentRows.value
     .filter((r) => r.column.column_name !== currentColumn)
     .filter((r) => r.strategy !== 'SKIP')
     .filter((r) => isNumType(r.column.data_type))
@@ -465,14 +607,28 @@ const targetColumnOptions = computed(() => {
     .map((c) => ({ label: `${c.column_name}（${c.column_type}）`, value: c.column_name }))
 })
 
-function assocsOf(columnName: string): Association[] {
-  // 字段表格"关联字段"列：只显示以主表该字段为源发起的关联（多级关联中其他表为源的不在此列展示）
-  return associations.value.filter((a) => (a.source_table || tableName) === tableName && a.source_column === columnName)
-}
-
 function removeAssoc(a: Association): void {
   associations.value = associations.value.filter((x) => x !== a)
+  cleanupOrphanRelatedRows()
   dirty.value = true
+}
+
+/** 抽屉中按索引删除关联 */
+function removeAssocByIndex(i: number): void {
+  associations.value.splice(i, 1)
+  cleanupOrphanRelatedRows()
+  dirty.value = true
+}
+
+/** 清理不再参与造数的关联表字段配置（关联删光后该表 Tab 消失，配置一并丢弃） */
+function cleanupOrphanRelatedRows(): void {
+  const alive = new Set(associations.value.map((a) => a.target_table))
+  for (const t of Object.keys(relatedFieldRows.value)) {
+    if (!alive.has(t)) delete relatedFieldRows.value[t]
+  }
+  if (activeTable.value !== tableName && !alive.has(activeTable.value)) {
+    activeTable.value = tableName
+  }
 }
 
 async function loadTargetColumns(): Promise<void> {
@@ -542,6 +698,10 @@ function addAssoc(): void {
   }
   associations.value = next
   dirty.value = true
+  // 新关联的目标表若未加载字段配置，立即初始化（保证该表 Tab 可展示编辑）
+  if (assocForm.targetTable && !relatedFieldRows.value[assocForm.targetTable]) {
+    loadRelatedTableRows(assocForm.targetTable)
+  }
   assocForm.sourceColumn = null
   assocForm.targetColumn = null
   window.$message.success('关联已添加')
@@ -553,8 +713,6 @@ const saveCaseName = ref('')
 const saving = ref(false)
 const executeModalShow = ref(false)
 const executing = ref(false)
-
-const relatedTables = computed(() => [...new Set(associations.value.map((a) => a.target_table))])
 
 // 遍历模式信息（存在 ITERATE_LIST 字段时）
 const iterateInfo = computed(() => {
@@ -597,13 +755,13 @@ async function handleSaveOnly(): Promise<void> {
     if (isEdit && caseId) {
       await casesApi.update(caseId, {
         case_name: name,
-        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        config: buildConfig(),
       })
     } else {
       await engineApi.save({
         case_name: name,
         datasource_id: datasourceId,
-        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        config: buildConfig(),
       })
     }
     window.$message.success('Case 已保存')
@@ -629,7 +787,7 @@ async function handleExecute(payload: { caseName: string; targetCount: number })
       // 编辑模式：先保存最新配置再执行
       await casesApi.update(caseId, {
         case_name: payload.caseName,
-        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        config: buildConfig(),
       })
       const res = await casesApi.execute(caseId, payload.targetCount)
       taskNo = res.data.task_no
@@ -638,7 +796,7 @@ async function handleExecute(payload: { caseName: string; targetCount: number })
         case_name: payload.caseName,
         datasource_id: datasourceId,
         target_count: payload.targetCount,
-        config: { version: '1.0', main_table: tableName, field_configs: buildFieldConfigs(), associations: associations.value },
+        config: buildConfig(),
       })
       taskNo = res.data.task_no
     }
@@ -664,6 +822,8 @@ function handleReset(): void {
         row.params = { ...inferred.params }
       })
       associations.value = []
+      relatedFieldRows.value = {}
+      activeTable.value = tableName
       dirty.value = false
     },
   })
@@ -719,6 +879,17 @@ onMounted(async () => {
 }
 .field-card {
   padding: 14px;
+}
+.table-tabs {
+  margin-bottom: 12px;
+}
+.tab-label {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 .field-toolbar {
   display: flex;

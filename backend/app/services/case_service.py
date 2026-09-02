@@ -173,6 +173,13 @@ async def _detect_schema_outdated(
         target_columns = await _get_column_type_map(db, case.datasource_id, assoc.target_table)
         if target_columns and assoc.target_column not in target_columns:
             outdated.append(f"{assoc.target_table}.{assoc.target_column}")
+    # 关联表字段策略覆盖中的字段同样做失效检测
+    for table, related_configs in (new_config.related_field_configs or {}).items():
+        related_columns = await _get_column_type_map(db, case.datasource_id, table)
+        if related_columns:
+            for fc in related_configs:
+                if fc.column_name not in related_columns:
+                    outdated.append(f"{table}.{fc.column_name}")
     return outdated
 
 
