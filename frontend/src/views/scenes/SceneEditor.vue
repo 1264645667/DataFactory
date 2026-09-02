@@ -13,8 +13,7 @@
           v-for="c in filteredCases"
           :key="c.id"
           class="case-card"
-          draggable="true"
-          @dragstart="onDragStart($event, c)"
+          @pointerdown="onCardPointerDown($event, c)"
         >
           <div class="case-card-name">{{ c.case_name }}</div>
           <div class="case-card-meta">主表：{{ c.main_table }}</div>
@@ -27,8 +26,7 @@
 
     <!-- 右侧画布区域 -->
     <div class="canvas-area">
-      <!-- drop/dragover 绑在外层容器：VueFlow 内部 DOM 会拦截拖拽事件，绑在组件上可能不触发 -->
-      <div class="canvas-wrap gradient-border-card" @drop="onDrop" @dragover="onDragOver">
+      <div ref="canvasWrapRef" class="canvas-wrap gradient-border-card" :class="{ 'drop-target-active': dragGhost && isOverCanvas }">
         <VueFlow
           v-model:nodes="flowNodes"
           v-model:edges="flowEdges"
@@ -81,6 +79,14 @@
       </div>
     </div>
   </div>
+
+  <!-- 拖拽跟随预览（Pointer Events 方案，绕开 Chrome 144+ HTML5 DnD 回归 bug） -->
+  <Teleport to="body">
+    <div v-if="dragGhost" class="drag-ghost" :style="{ left: dragGhost.x + 'px', top: dragGhost.y + 'px' }">
+      <div class="case-card-name">{{ dragGhost.case_name }}</div>
+      <div class="case-card-meta">主表：{{ dragGhost.main_table }}</div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -136,6 +142,12 @@ const flowEdges = ref<Edge[]>([])
 const sceneName = ref('')
 const sceneDescription = ref<string | null>(null)
 const saving = ref(false)
+/** 画布容器引用（Pointer Events 拖拽判定落点用） */
+const canvasWrapRef = ref<HTMLElement | null>(null)
+/** 拖拽中的 Case 预览（含跟随坐标），null 表示未在拖拽 */
+const dragGhost = ref<{ case_id: number; case_name: string; main_table: string; datasource_name: string; x: number; y: number } | null>(null)
+/** 拖拽指针当前是否在画布上方（控制高亮） */
+const isOverCanvas = ref(false)
 
 const { screenToFlowCoordinate, fitView } = useVueFlow()
 
@@ -168,27 +180,9 @@ function genNodeId(): string {
   return `n_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 }
 
-/** 拖拽 Case 卡片开始：写入 drag data */
-function onDragStart(event: DragEvent, c: CaseItem): void {
-  event.dataTransfer?.setData(
-    'application/dataforge-case',
-    JSON.stringify({ case_id: c.id, case_name: c.case_name, main_table: c.main_table, datasource_name: c.datasource_name }),
-  )
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(event: DragEvent): void {
-  event.preventDefault()
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-}
-
-/** 拖放到画布：新增场景节点 */
-function onDrop(event: DragEvent): void {
-  event.preventDefault()
-  const raw = event.dataTransfer?.getData('application/dataforge-case')
-  if (!raw) return
-  const c = JSON.parse(raw) as { case_id: number; case_name: string; main_table: string; datasource_name: string }
-  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+/** 在指定屏幕坐标处新增场景节点（拖放入画布时调用） */
+function addCaseNode(c: { case_id: number; case_name: string; main_table: string; datasource_name: string }, clientX: number, clientY: number): void {
+  const position = screenToFlowCoordinate({ x: clientX, y: clientY })
   flowNodes.value.push({
     id: genNodeId(),
     type: 'case',
@@ -202,6 +196,48 @@ function onDrop(event: DragEvent): void {
       fail_strategy: 'continue',
     },
   })
+}
+
+/** 判断屏幕坐标是否在画布区域内 */
+function isPointInCanvas(x: number, y: number): boolean {
+  const rect = canvasWrapRef.value?.getBoundingClientRect()
+  return !!rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
+}
+
+/**
+ * Case 卡片拖拽（Pointer Events 实现）。
+ * 说明：Chrome 144+ 存在 HTML5 DnD 回归 bug（dragover preventDefault 后 drop 仍不派发），
+ * 故改用 pointerdown/move/up 自实现拖拽，跨浏览器行为一致、不受该 bug 影响。
+ */
+function onCardPointerDown(e: PointerEvent, c: CaseItem): void {
+  if (e.button !== 0) return // 仅响应左键
+  const payload = { case_id: c.id, case_name: c.case_name, main_table: c.main_table, datasource_name: c.datasource_name }
+  const startX = e.clientX
+  const startY = e.clientY
+  let started = false
+
+  const onMove = (ev: PointerEvent): void => {
+    // 移动超过阈值才算拖拽，避免误触（与点击区分）
+    if (!started) {
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return
+      started = true
+    }
+    dragGhost.value = { ...payload, x: ev.clientX, y: ev.clientY }
+    isOverCanvas.value = isPointInCanvas(ev.clientX, ev.clientY)
+  }
+  const onEnd = (ev: PointerEvent): void => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onEnd)
+    window.removeEventListener('pointercancel', onEnd)
+    if (started && dragGhost.value && isPointInCanvas(ev.clientX, ev.clientY)) {
+      addCaseNode(payload, ev.clientX, ev.clientY)
+    }
+    dragGhost.value = null
+    isOverCanvas.value = false
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onEnd)
+  window.addEventListener('pointercancel', onEnd)
 }
 
 /** 连线：建立依赖关系，自动检测并禁止循环依赖 */
@@ -449,6 +485,27 @@ onMounted(async () => {
   flex: 1;
   overflow: hidden;
   position: relative;
+  transition: outline-color 0.15s ease;
+  outline: 2px dashed transparent;
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+/* 拖拽 Case 经过画布上方时的高亮提示 */
+.canvas-wrap.drop-target-active {
+  outline-color: rgba(124, 58, 237, 0.6);
+}
+/* 拖拽跟随预览（fixed 定位，pointer-events:none 不拦截指针事件） */
+.drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translate(12px, -50%);
+  background: rgba(30, 30, 50, 0.92);
+  border: 1px solid rgba(124, 58, 237, 0.6);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  min-width: 180px;
 }
 .scene-flow {
   height: 100%;

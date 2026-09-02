@@ -30,18 +30,35 @@
               <!-- 连线 -->
               <g v-for="(line, i) in graphLines" :key="`l-${i}`">
                 <path :d="line.path" stroke="#7c3aed" stroke-width="1.6" fill="none" opacity="0.75" />
-                <text :x="line.labelX" :y="line.labelY" fill="#94a3b8" font-size="11">{{ line.label }}</text>
+                <text :x="line.labelX" :y="line.labelY" fill="#94a3b8" font-size="11" text-anchor="middle">{{ line.label }}</text>
               </g>
-              <!-- 主表节点 -->
-              <g>
-                <rect x="20" :y="mainNodeY" :width="nodeW" :height="nodeH" rx="8" fill="rgba(124,58,237,0.15)" stroke="#7c3aed" />
-                <text :x="20 + nodeW / 2" :y="mainNodeY + nodeH / 2 - 4" fill="#e2e8f0" font-size="13" font-weight="600" text-anchor="middle">{{ detail.main_table }}</text>
-                <text :x="20 + nodeW / 2" :y="mainNodeY + nodeH / 2 + 13" fill="#64748b" font-size="11" text-anchor="middle">主表</text>
-              </g>
-              <!-- 关联表节点 -->
-              <g v-for="(node, i) in relatedNodes" :key="`n-${i}`">
-                <rect :x="node.x" :y="node.y" :width="nodeW" :height="nodeH" rx="8" fill="rgba(37,99,235,0.12)" stroke="#2563eb" />
-                <text :x="node.x + nodeW / 2" :y="node.y + nodeH / 2 + 4" fill="#e2e8f0" font-size="12" text-anchor="middle">{{ node.name }}</text>
+              <!-- 节点（按拓扑层次从左到右：主表 → 各级关联表） -->
+              <g v-for="node in layoutNodes" :key="node.name">
+                <rect
+                  :x="node.x"
+                  :y="node.y"
+                  :width="nodeW"
+                  :height="nodeH"
+                  rx="8"
+                  :fill="node.isMain ? 'rgba(124,58,237,0.15)' : 'rgba(37,99,235,0.12)'"
+                  :stroke="node.isMain ? '#7c3aed' : '#2563eb'"
+                />
+                <text
+                  :x="node.x + nodeW / 2"
+                  :y="node.isMain ? node.y + nodeH / 2 - 4 : node.y + nodeH / 2 + 4"
+                  fill="#e2e8f0"
+                  font-size="13"
+                  :font-weight="node.isMain ? 600 : 400"
+                  text-anchor="middle"
+                >{{ node.name }}</text>
+                <text
+                  v-if="node.isMain"
+                  :x="node.x + nodeW / 2"
+                  :y="node.y + nodeH / 2 + 13"
+                  fill="#64748b"
+                  font-size="11"
+                  text-anchor="middle"
+                >主表</text>
               </g>
             </svg>
           </div>
@@ -93,6 +110,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import { formatDateTime } from '@/utils/formatter'
 import { STRATEGY_LABELS, columnTypeColor } from '@/utils/strategy'
+import { buildLayers } from '@/utils/dag'
 
 const route = useRoute()
 const router = useRouter()
@@ -141,36 +159,85 @@ const fieldColumns: DataTableColumns<FieldStrategyConfig> = [
   },
 ]
 
-// ---------------- 关联关系图（简单节点-连线图） ----------------
+// ---------------- 关联关系图（拓扑分层布局，支持多级关联） ----------------
 const nodeW = 150
 const nodeH = 46
-const graphWidth = 620
+const gapX = 210
+const gapY = 80
 
-const relatedNodes = computed(() => {
-  const tables = relatedTables.value
-  return tables.map((name, i) => ({ name, x: 420, y: 20 + i * 76 }))
+interface GraphNode {
+  name: string
+  x: number
+  y: number
+  isMain: boolean
+}
+
+// 表级节点与边（多级关联：source_table 缺省为主表）
+const tableGraph = computed(() => {
+  const mainTable = config.value.main_table
+  const nodeSet = new Set<string>([mainTable])
+  const edges: Array<{ source: string; target: string }> = []
+  for (const a of config.value.associations) {
+    const src = a.source_table || mainTable
+    nodeSet.add(src)
+    nodeSet.add(a.target_table)
+    edges.push({ source: src, target: a.target_table })
+  }
+  return { nodes: [...nodeSet], edges }
 })
 
-const graphHeight = computed(() => Math.max(120, 20 + relatedNodes.value.length * 76 + 20))
-const mainNodeY = computed(() => Math.max(20, (graphHeight.value - nodeH) / 2))
-
-const graphLines = computed(() => {
-  const lines: Array<{ path: string; label: string; labelX: number; labelY: number }> = []
-  const mainCX = 20 + nodeW
-  const mainCY = mainNodeY.value + nodeH / 2
-  config.value.associations.forEach((a) => {
-    const node = relatedNodes.value.find((n) => n.name === a.target_table)
-    if (!node) return
-    const tx = node.x
-    const ty = node.y + nodeH / 2
-    const midX = (mainCX + tx) / 2
-    lines.push({
-      path: `M ${mainCX} ${mainCY} C ${midX} ${mainCY}, ${midX} ${ty}, ${tx} ${ty}`,
-      label: `${a.source_column} → ${a.target_column}`,
-      labelX: midX - 40,
-      labelY: (mainCY + ty) / 2 - 6,
+// 拓扑分层：主表在第 0 层，下游表按依赖层次逐层向右展开，层内垂直堆叠
+const layoutNodes = computed<GraphNode[]>(() => {
+  const { nodes, edges } = tableGraph.value
+  let layers: string[][]
+  try {
+    layers = buildLayers(nodes, edges)
+  } catch {
+    layers = [nodes] // 有环时退化为单列（保存时已被环检测拦截，此处兜底）
+  }
+  const result: GraphNode[] = []
+  layers.forEach((layer, li) => {
+    layer.forEach((name, ni) => {
+      result.push({ name, x: 30 + li * gapX, y: 30 + ni * gapY, isMain: name === config.value.main_table })
     })
   })
+  return result
+})
+
+const graphWidth = computed(() => {
+  const xs = layoutNodes.value.map((n) => n.x)
+  return Math.max(620, (xs.length ? Math.max(...xs) : 30) + nodeW + 40)
+})
+const graphHeight = computed(() => {
+  const ys = layoutNodes.value.map((n) => n.y)
+  return Math.max(140, (ys.length ? Math.max(...ys) : 30) + nodeH + 30)
+})
+
+const graphLines = computed(() => {
+  const posMap = new Map(layoutNodes.value.map((n) => [n.name, n]))
+  const lines: Array<{ path: string; label: string; labelX: number; labelY: number }> = []
+  const pairCount = new Map<string, number>()
+  for (const a of config.value.associations) {
+    const src = a.source_table || config.value.main_table
+    const srcNode = posMap.get(src)
+    const tgtNode = posMap.get(a.target_table)
+    if (!srcNode || !tgtNode) continue
+    // 同一对表之间的多条字段关联：标签纵向错开，避免重叠
+    const pairKey = `${src}⟩${a.target_table}`
+    const idx = pairCount.get(pairKey) ?? 0
+    pairCount.set(pairKey, idx + 1)
+    const sx = srcNode.x + nodeW
+    const sy = srcNode.y + nodeH / 2
+    const tx = tgtNode.x
+    const ty = tgtNode.y + nodeH / 2
+    const midX = (sx + tx) / 2
+    lines.push({
+      path: `M ${sx} ${sy} C ${midX} ${sy}, ${midX} ${ty}, ${tx} ${ty}`,
+      label: `${a.source_column} → ${a.target_column}`,
+      labelX: midX,
+      labelY: (sy + ty) / 2 - 6 - idx * 14,
+    })
+  }
   return lines
 })
 

@@ -148,23 +148,33 @@
         <!-- 已配置关联列表 -->
         <div class="assoc-list">
           <div v-for="(a, i) in associations" :key="i" class="assoc-item">
-            <span class="assoc-source">{{ a.source_column }}</span>
+            <span class="assoc-source">{{ a.source_table || tableName }}.{{ a.source_column }}</span>
             <span class="dim">→</span>
             <span class="assoc-target">{{ a.target_table }}.{{ a.target_column }}</span>
             <n-button text size="tiny" type="error" @click="associations.splice(i, 1)">删除</n-button>
           </div>
           <EmptyState v-if="associations.length === 0" description="暂无关联配置" :size="70" />
         </div>
-        <!-- 添加关联 -->
+        <!-- 添加关联（支持多级：源表可以是主表或任一已关联的表） -->
         <div class="assoc-add">
-          <h4 class="assoc-add-title">添加关联</h4>
+          <h4 class="assoc-add-title">添加关联（支持多级）</h4>
           <n-form label-placement="top" size="small">
-            <n-form-item label="当前字段（源）">
+            <n-form-item label="源表">
+              <n-select
+                v-model:value="assocForm.sourceTable"
+                :options="sourceTableOptions"
+                placeholder="选择源表（主表或已关联的表）"
+                @update:value="onSourceTableChange"
+              />
+            </n-form-item>
+            <n-form-item label="源字段">
               <n-select
                 v-model:value="assocForm.sourceColumn"
                 :options="sourceColumnOptions"
                 filterable
-                placeholder="选择本表字段"
+                placeholder="选择源字段"
+                :disabled="!assocForm.sourceTable"
+                :loading="sourceColumnsLoading"
               />
             </n-form-item>
             <n-form-item label="目标表">
@@ -367,26 +377,71 @@ function buildFieldConfigs(): FieldStrategyConfig[] {
 
 // ---------------- 关联管理 ----------------
 const assocDrawerShow = ref(false)
-const assocForm = reactive({ sourceColumn: null as string | null, targetTable: null as string | null, targetColumn: null as string | null })
+const assocForm = reactive({
+  sourceTable: tableName as string, // 默认主表
+  sourceColumn: null as string | null,
+  targetTable: null as string | null,
+  targetColumn: null as string | null,
+})
 const targetTables = ref<TableInfo[]>([])
 const targetColumns = ref<ColumnInfo[]>([])
+const sourceColumns = ref<ColumnInfo[]>([]) // 关联表作为源时的字段缓存
+const sourceColumnsLoading = ref(false)
 
-const sourceColumnOptions = computed(() =>
-  fieldRows.value
-    .filter((r) => r.strategy !== 'SKIP') // SKIP 字段不能设为关联源/目标
-    .map((r) => ({
-      label: `${r.column.column_name}（${r.column.column_type}）`,
-      value: r.column.column_name,
-    })),
-)
+// 源表选项：主表 + 已纳入关联的表（多级链式扩展：先 A→B，B 才可作为源去关联 C）
+const sourceTableOptions = computed(() => {
+  const tables: string[] = [tableName]
+  for (const a of associations.value) {
+    if (!tables.includes(a.target_table)) tables.push(a.target_table)
+    const st = a.source_table
+    if (st && !tables.includes(st)) tables.push(st)
+  }
+  return tables.map((t) => ({ label: t === tableName ? `${t}（主表）` : t, value: t }))
+})
+
+// 源字段选项：主表用已配置字段（非 SKIP），关联表用加载的字段（排除自增列）
+const sourceColumnOptions = computed(() => {
+  if (!assocForm.sourceTable || assocForm.sourceTable === tableName) {
+    return fieldRows.value
+      .filter((r) => r.strategy !== 'SKIP') // SKIP 字段不能设为关联源/目标
+      .map((r) => ({
+        label: `${r.column.column_name}（${r.column.column_type}）`,
+        value: r.column.column_name,
+      }))
+  }
+  return sourceColumns.value
+    .filter((c) => !isAutoIncrement(c))
+    .map((c) => ({ label: `${c.column_name}（${c.column_type}）`, value: c.column_name }))
+})
+
+// 源表变化：切到关联表时需加载该表字段
+async function onSourceTableChange(table: string): Promise<void> {
+  assocForm.sourceColumn = null
+  if (!table || table === tableName) {
+    sourceColumns.value = []
+    return
+  }
+  sourceColumnsLoading.value = true
+  try {
+    const res = await engineApi.columns(datasourceId, table)
+    sourceColumns.value = res.data
+  } finally {
+    sourceColumnsLoading.value = false
+  }
+}
 
 const targetTableOptions = computed(() =>
   targetTables.value.map((t) => ({ label: `${t.table_name}${t.table_comment ? `（${t.table_comment}）` : ''}`, value: t.table_name })),
 )
 
-// 目标字段：仅显示类型兼容的字段
+// 目标字段：仅显示类型兼容的字段（源字段按当前选中的源表取）
 const targetColumnOptions = computed(() => {
-  const source = fieldRows.value.find((r) => r.column.column_name === assocForm.sourceColumn)?.column
+  let source: ColumnInfo | undefined
+  if (!assocForm.sourceTable || assocForm.sourceTable === tableName) {
+    source = fieldRows.value.find((r) => r.column.column_name === assocForm.sourceColumn)?.column
+  } else {
+    source = sourceColumns.value.find((c) => c.column_name === assocForm.sourceColumn)
+  }
   return targetColumns.value
     .filter((c) => !isAutoIncrement(c))
     .filter((c) => !source || typesCompatible(source, c))
@@ -394,7 +449,8 @@ const targetColumnOptions = computed(() => {
 })
 
 function assocsOf(columnName: string): Association[] {
-  return associations.value.filter((a) => a.source_column === columnName)
+  // 字段表格"关联字段"列：只显示以主表该字段为源发起的关联（多级关联中其他表为源的不在此列展示）
+  return associations.value.filter((a) => (a.source_table || tableName) === tableName && a.source_column === columnName)
 }
 
 function removeAssoc(a: Association): void {
@@ -410,12 +466,12 @@ async function loadTargetColumns(): Promise<void> {
   targetColumns.value = res.data
 }
 
-/** 关联环检测（有向图 DFS） */
+/** 关联环检测（表级有向图 DFS）：源表缺省为主表 */
 function hasAssocCycle(edges: Association[]): boolean {
   const graph = new Map<string, string[]>()
   for (const e of edges) {
-    const from = `${tableName}.${e.source_column}`
-    const to = `${e.target_table}.${e.target_column}`
+    const from = e.source_table || tableName
+    const to = e.target_table
     graph.set(from, [...(graph.get(from) ?? []), to])
   }
   const visiting = new Set<string>()
@@ -435,15 +491,19 @@ function hasAssocCycle(edges: Association[]): boolean {
 }
 
 function addAssoc(): void {
-  if (!assocForm.sourceColumn || !assocForm.targetTable || !assocForm.targetColumn) return
-  // 自关联校验
-  if (assocForm.targetTable === tableName && assocForm.targetColumn === assocForm.sourceColumn) {
-    window.$message.error('不允许自关联（表内同字段）')
+  if (!assocForm.sourceTable || !assocForm.sourceColumn || !assocForm.targetTable || !assocForm.targetColumn) return
+  // 表级自关联校验
+  if (assocForm.sourceTable === assocForm.targetTable) {
+    window.$message.error('不允许表内自关联（源表与目标表相同）')
     return
   }
-  // 重复校验
+  // 重复校验（含源表维度）
   const dup = associations.value.some(
-    (a) => a.source_column === assocForm.sourceColumn && a.target_table === assocForm.targetTable && a.target_column === assocForm.targetColumn,
+    (a) =>
+      (a.source_table || tableName) === assocForm.sourceTable &&
+      a.source_column === assocForm.sourceColumn &&
+      a.target_table === assocForm.targetTable &&
+      a.target_column === assocForm.targetColumn,
   )
   if (dup) {
     window.$message.warning('该关联已存在')
@@ -451,15 +511,21 @@ function addAssoc(): void {
   }
   const next = [
     ...associations.value,
-    { source_column: assocForm.sourceColumn, target_table: assocForm.targetTable, target_column: assocForm.targetColumn },
+    {
+      source_table: assocForm.sourceTable === tableName ? null : assocForm.sourceTable, // 主表省略，保持简洁兼容
+      source_column: assocForm.sourceColumn,
+      target_table: assocForm.targetTable,
+      target_column: assocForm.targetColumn,
+    },
   ]
-  // 循环关联校验
+  // 循环关联校验（表级）
   if (hasAssocCycle(next)) {
     window.$message.error('检测到循环关联，请检查关联配置')
     return
   }
   associations.value = next
   dirty.value = true
+  assocForm.sourceColumn = null
   assocForm.targetColumn = null
   window.$message.success('关联已添加')
 }

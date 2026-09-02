@@ -70,8 +70,13 @@ class FieldConfig(BaseModel):
 
 
 class AssociationConfig(BaseModel):
-    """字段关联配置。"""
+    """字段关联配置（支持多级：源表可以是主表或任一已关联表）。
 
+    多级链式示例：A.customername→B.customername，B.customertaxno→C.customertaxno。
+    source_table 缺省为主表（向后兼容旧的一级关联配置）。
+    """
+
+    source_table: str | None = None
     source_column: str
     target_table: str
     target_column: str

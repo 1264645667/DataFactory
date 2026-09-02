@@ -428,18 +428,40 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
         except ValueError as e:
             raise BizException(STRATEGY_PARAM_INVALID, f"字段 {fc.column_name}：{e}") from e
 
-    # 4. 关联配置校验
+    # 4. 关联配置校验（支持多级：源表可以是主表或任一已关联的表，形成 A→B→C 链式）
     associations = config.associations or []
-    target_type_cache: dict[str, dict[str, str]] = {}
+    # 表字段类型缓存（source/target 共用）
+    column_type_cache: dict[str, dict[str, str]] = {}
     configured_columns = {fc.column_name for fc in field_configs}
     skip_columns = {
         fc.column_name for fc in field_configs if (fc.strategy or "").upper() == "SKIP"
     }
+    # 造数范围内的表：主表 + 所有关联目标表（多级关联的源表必须在此范围内，否则其数据不会生成）
+    scope_tables = {config.main_table}
+    for assoc in associations:
+        scope_tables.add(assoc.target_table)
+
+    async def _columns_of(table: str) -> dict[str, str]:
+        if table not in column_type_cache:
+            column_type_cache[table] = await _get_column_type_map(db, datasource_id, table)
+        return column_type_cache[table]
+
     for assoc in associations:
         target_table = assoc.target_table
-        if target_table not in target_type_cache:
-            target_type_cache[target_table] = await _get_column_type_map(db, datasource_id, target_table)
-        target_columns = target_type_cache[target_table]
+        source_table = assoc.source_table or config.main_table  # 源表缺省为主表（兼容一级关联）
+
+        # 表内自关联禁止
+        if source_table == target_table:
+            raise BizException(CASE_CONFIG_INVALID, f"不允许表内自关联：{source_table}")
+        # 源表必须已纳入造数范围（主表或某个关联目标表），否则没有数据可供关联
+        if source_table not in scope_tables:
+            raise BizException(
+                CASE_CONFIG_INVALID,
+                f"关联源表 {source_table} 未纳入本 Case 造数范围（须为主表或某个关联目标表）",
+            )
+
+        # 目标表/目标字段存在性
+        target_columns = await _columns_of(target_table)
         if not target_columns:
             raise BizException(TABLE_NOT_FOUND, f"关联目标表 {target_table} 不存在或尚未同步")
         if assoc.target_column not in target_columns:
@@ -447,17 +469,26 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
                 CASE_CONFIG_INVALID, f"关联目标字段不存在：{target_table}.{assoc.target_column}"
             )
 
-        # 源字段：必须已配置策略且非 SKIP（自增主键不可作为关联源）
-        source_table = config.main_table
-        source_type = main_columns.get(assoc.source_column)
-        if assoc.source_column not in configured_columns and source_type is None:
-            raise BizException(
-                CASE_CONFIG_INVALID, f"关联源字段不存在：{source_table}.{assoc.source_column}"
-            )
-        if assoc.source_column in skip_columns:
-            raise BizException(
-                CASE_CONFIG_INVALID, f"自增主键字段不能作为关联源：{source_table}.{assoc.source_column}"
-            )
+        # 源字段存在性 + 自增/SKIP 校验
+        if source_table == config.main_table:
+            # 主表：必须已配置策略且非 SKIP（自增主键不可作为关联源）
+            source_type = main_columns.get(assoc.source_column)
+            if assoc.source_column not in configured_columns and source_type is None:
+                raise BizException(
+                    CASE_CONFIG_INVALID, f"关联源字段不存在：{source_table}.{assoc.source_column}"
+                )
+            if assoc.source_column in skip_columns:
+                raise BizException(
+                    CASE_CONFIG_INVALID, f"自增主键字段不能作为关联源：{source_table}.{assoc.source_column}"
+                )
+        else:
+            # 关联表作为源（多级）：字段须存在于该表（自增/SKIP 由执行器按推断策略兜底校验）
+            source_columns = await _columns_of(source_table)
+            source_type = source_columns.get(assoc.source_column)
+            if source_type is None:
+                raise BizException(
+                    CASE_CONFIG_INVALID, f"关联源字段不存在：{source_table}.{assoc.source_column}"
+                )
 
         # 类型兼容校验（1301）
         if source_type is not None:

@@ -222,8 +222,10 @@ export interface FieldStrategyConfig {
   strategy_params: Record<string, unknown>
 }
 
-/** 字段关联（config.associations 元素） */
+/** 字段关联（config.associations 元素，支持多级：source_table 缺省为主表） */
 export interface Association {
+  /** 源表（多级关联时指定，缺省为主表） */
+  source_table?: string | null
   source_column: string
   target_table: string
   target_column: string
