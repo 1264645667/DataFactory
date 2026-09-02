@@ -15,6 +15,7 @@ export const STRATEGY_LABELS: Record<string, string> = {
   UUID: '随机 UUID',
   SNOWFLAKE: '雪花 ID',
   INCR_FROM: '指定值自增',
+  DERIVED: '字段运算派生',
   NOW: '当前时间',
   RANDOM_TIME_RANGE: '随机时间段',
   FIXED_TIME: '固定时间',
@@ -81,7 +82,7 @@ export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
     ]
   }
   // 通用字符 / 数字字段
-  return [
+  const opts: StrategyOption[] = [
     { label: STRATEGY_LABELS.DEFAULT, value: 'DEFAULT' },
     { label: STRATEGY_LABELS.RANDOM_FIXED_LEN, value: 'RANDOM_FIXED_LEN' },
     { label: STRATEGY_LABELS.RANDOM_RANGE_LEN, value: 'RANDOM_RANGE_LEN' },
@@ -91,6 +92,11 @@ export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
     // 指定值自增：数字字段生成纯数字，字符字段可配前缀生成 test0001 这类序列
     { label: STRATEGY_LABELS.INCR_FROM, value: 'INCR_FROM' },
   ]
+  // 数字字段支持字段运算派生（B = A×0.8 / A-5000 等）
+  if (isNumType(column.data_type)) {
+    opts.push({ label: STRATEGY_LABELS.DERIVED, value: 'DERIVED' })
+  }
+  return opts
 }
 
 /**
@@ -207,6 +213,16 @@ export function validateStrategyParams(
         const estimated = prefix.length + Math.max(Number(padLength) || 0, String(start).length)
         if (estimated > maxLen) return `前缀+数字长度约 ${estimated}，超过字段最大长度 ${maxLen}`
       }
+      return null
+    }
+    case 'DERIVED': {
+      const source = params.source_column
+      if (!source || typeof source !== 'string') return '请选择源字段'
+      const op = String(params.operator ?? '')
+      if (!['multiply', 'divide', 'add', 'subtract'].includes(op)) return '请选择运算符'
+      const operand = Number(params.operand)
+      if (params.operand == null || params.operand === '' || Number.isNaN(operand)) return '请输入操作数（数字）'
+      if (op === 'divide' && operand === 0) return '除数不能为 0'
       return null
     }
     case 'RANDOM_TIME_RANGE': {

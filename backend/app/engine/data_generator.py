@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.engine.strategies.derived_strategies import topo_order_derived
 from app.engine.strategies.number_strategies import prefetch_incr_range
 from app.engine.strategies.registry import get_strategy
 
@@ -67,6 +68,10 @@ def generate_rows(
             column_values[column] = values
             continue
 
+        # DERIVED 派生字段：依赖源列整列值，延迟到源列生成后统一计算
+        if strategy_code == "DERIVED":
+            continue
+
         # 按策略生成
         strategy = get_strategy(strategy_code)
         params = dict(field_config.get("strategy_params") or {})
@@ -80,6 +85,21 @@ def generate_rows(
         # 每批生成前做一次参数校验（非法配置快速失败，抛中文 ValueError）
         strategy.validate(field_config, params)
         column_values[column] = [strategy.generate(field_config, params, i) for i in range(count)]
+
+    # 第二遍：DERIVED 派生字段按拓扑顺序整列计算（源列须已生成，支持多级派生）
+    for field_config in topo_order_derived(field_configs):
+        column = field_config["column_name"]
+        if column in column_values:  # 已被 override/关联注入填充则跳过
+            continue
+        params = dict(field_config.get("strategy_params") or {})
+        strategy = get_strategy("DERIVED")
+        strategy.validate(field_config, params)
+        source_column = params["source_column"]
+        if source_column not in column_values:
+            raise ValueError(
+                f"派生字段的源字段不存在或未生成（源字段不能是自增主键/未配置字段）: {source_column}"
+            )
+        column_values[column] = strategy.compute_column(field_config, params, column_values[source_column])
 
     columns = list(column_values.keys())
     if count <= 0 or not columns:

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from app.engine.strategies.base import BaseStrategy
+from app.engine.strategies.derived_strategies import DerivedStrategy
 from app.engine.strategies.number_strategies import IncrFromStrategy
 from app.engine.strategies.pk_strategies import SnowflakeStrategy, UUIDStrategy
 from app.engine.strategies.string_strategies import (
@@ -34,6 +35,7 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "UUID": UUIDStrategy,
     "SNOWFLAKE": SnowflakeStrategy,
     "INCR_FROM": IncrFromStrategy,
+    "DERIVED": DerivedStrategy,  # 字段运算派生（依赖源列，data_generator 整列计算）
     "NOW": NowStrategy,
     "RANDOM_TIME_RANGE": RandomTimeRangeStrategy,
     "FIXED_TIME": FixedTimeStrategy,

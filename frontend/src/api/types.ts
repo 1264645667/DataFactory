@@ -207,6 +207,7 @@ export type StrategyCode =
   | 'UUID'
   | 'SNOWFLAKE'
   | 'INCR_FROM'
+  | 'DERIVED'
   | 'NOW'
   | 'RANDOM_TIME_RANGE'
   | 'FIXED_TIME'

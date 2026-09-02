@@ -87,6 +87,34 @@
       />
     </div>
 
+    <!-- 字段运算派生：源字段 + 运算符 + 操作数（B = A×0.8 / A-5000 等） -->
+    <div v-else-if="strategy === 'DERIVED'" class="param-inline">
+      <n-select
+        :value="strVal('source_column')"
+        :options="siblingColumns ?? []"
+        size="small"
+        filterable
+        placeholder="源字段"
+        style="width: 150px"
+        @update:value="set('source_column', $event)"
+      />
+      <n-select
+        :value="strVal('operator')"
+        :options="OPERATOR_OPTIONS"
+        size="small"
+        placeholder="运算"
+        style="width: 80px"
+        @update:value="set('operator', $event)"
+      />
+      <n-input-number
+        :value="numVal('operand')"
+        size="small"
+        placeholder="数值"
+        style="width: 110px"
+        @update:value="set('operand', $event)"
+      />
+    </div>
+
     <!-- 随机时间段 -->
     <n-date-picker
       v-else-if="strategy === 'RANDOM_TIME_RANGE'"
@@ -121,9 +149,19 @@ const props = defineProps<{
   strategy: StrategyCode
   column: ColumnInfo
   modelValue: Record<string, unknown>
+  /** 同表其他数字字段选项（DERIVED 派生策略选源字段用） */
+  siblingColumns?: Array<{ label: string; value: string }>
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: Record<string, unknown>): void }>()
+
+// DERIVED 运算符选项
+const OPERATOR_OPTIONS = [
+  { label: '×', value: 'multiply' },
+  { label: '÷', value: 'divide' },
+  { label: '+', value: 'add' },
+  { label: '−', value: 'subtract' },
+]
 
 function numVal(key: string): number | null {
   const v = props.modelValue[key]

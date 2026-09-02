@@ -116,6 +116,7 @@
                     v-if="row.strategy !== 'SKIP'"
                     :strategy="row.strategy"
                     :column="row.column"
+                    :sibling-columns="siblingNumericColumns(row.column.column_name)"
                     v-model="row.params"
                   />
                   <span v-else class="dim">—</span>
@@ -259,6 +260,7 @@ import {
   getStrategyOptions,
   inferDefaultStrategy,
   isAutoIncrement,
+  isNumType,
   typesCompatible,
   validateStrategyParams,
 } from '@/utils/strategy'
@@ -379,6 +381,15 @@ function buildFieldConfigs(): FieldStrategyConfig[] {
     strategy: r.strategy,
     strategy_params: r.params,
   }))
+}
+
+/** DERIVED 派生策略的源字段选项：同表其他数字类型且非 SKIP 的字段 */
+function siblingNumericColumns(currentColumn: string): Array<{ label: string; value: string }> {
+  return fieldRows.value
+    .filter((r) => r.column.column_name !== currentColumn)
+    .filter((r) => r.strategy !== 'SKIP')
+    .filter((r) => isNumType(r.column.data_type))
+    .map((r) => ({ label: `${r.column.column_name}（${r.column.column_type}）`, value: r.column.column_name }))
 }
 
 // ---------------- 关联管理 ----------------
