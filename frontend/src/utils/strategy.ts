@@ -16,6 +16,7 @@ export const STRATEGY_LABELS: Record<string, string> = {
   SNOWFLAKE: '雪花 ID',
   INCR_FROM: '指定值自增',
   DERIVED: '字段运算派生',
+  TOOL_GEN: '快捷工具生成',
   NOW: '当前时间',
   RANDOM_TIME_RANGE: '随机时间段',
   FIXED_TIME: '固定时间',
@@ -92,6 +93,10 @@ export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
     // 指定值自增：数字字段生成纯数字，字符字段可配前缀生成 test0001 这类序列
     { label: STRATEGY_LABELS.INCR_FROM, value: 'INCR_FROM' },
   ]
+  // 字符字段支持快捷工具生成（身份证/手机号/银行卡/地址等）
+  if (isCharType(column.data_type)) {
+    opts.push({ label: STRATEGY_LABELS.TOOL_GEN, value: 'TOOL_GEN' })
+  }
   // 数字字段支持字段运算派生（B = A×0.8 / A-5000 等）
   if (isNumType(column.data_type)) {
     opts.push({ label: STRATEGY_LABELS.DERIVED, value: 'DERIVED' })
@@ -223,6 +228,17 @@ export function validateStrategyParams(
       const operand = Number(params.operand)
       if (params.operand == null || params.operand === '' || Number.isNaN(operand)) return '请输入操作数（数字）'
       if (op === 'divide' && operand === 0) return '除数不能为 0'
+      return null
+    }
+    case 'TOOL_GEN': {
+      const tool = String(params.tool ?? '')
+      if (!tool) return '请选择生成工具'
+      const supported = ['idcard', 'phone', 'bankcard', 'name', 'credit_code', 'taxpayer_id', 'address']
+      if (!supported.includes(tool)) return `未知工具类型：${tool}`
+      // 定长工具的值长度不能超过字段最大长度
+      const typicalLen: Record<string, number> = { idcard: 18, phone: 11, credit_code: 18, taxpayer_id: 18 }
+      const need = typicalLen[tool]
+      if (need && maxLen && need > maxLen) return `该工具生成值长度约 ${need}，超过字段最大长度 ${maxLen}`
       return null
     }
     case 'RANDOM_TIME_RANGE': {

@@ -208,6 +208,7 @@ export type StrategyCode =
   | 'SNOWFLAKE'
   | 'INCR_FROM'
   | 'DERIVED'
+  | 'TOOL_GEN'
   | 'NOW'
   | 'RANDOM_TIME_RANGE'
   | 'FIXED_TIME'

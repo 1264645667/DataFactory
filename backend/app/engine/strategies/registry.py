@@ -24,6 +24,7 @@ from app.engine.strategies.time_strategies import (
     NowStrategy,
     RandomTimeRangeStrategy,
 )
+from app.engine.strategies.tool_strategies import ToolGenStrategy
 
 STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "DEFAULT": DefaultStrategy,
@@ -36,6 +37,7 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "SNOWFLAKE": SnowflakeStrategy,
     "INCR_FROM": IncrFromStrategy,
     "DERIVED": DerivedStrategy,  # 字段运算派生（依赖源列，data_generator 整列计算）
+    "TOOL_GEN": ToolGenStrategy,  # 调用快捷工具随机生成（身份证/手机号/地址等）
     "NOW": NowStrategy,
     "RANDOM_TIME_RANGE": RandomTimeRangeStrategy,
     "FIXED_TIME": FixedTimeStrategy,

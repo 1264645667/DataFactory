@@ -115,6 +115,106 @@
       />
     </div>
 
+    <!-- 快捷工具生成：工具下拉 + 各工具可选参数（身份证/手机号/银行卡/地址等） -->
+    <div v-else-if="strategy === 'TOOL_GEN'" class="param-stack">
+      <n-select
+        :value="strVal('tool')"
+        :options="TOOL_OPTIONS"
+        size="small"
+        placeholder="选择生成工具"
+        style="width: 200px"
+        @update:value="set('tool', $event)"
+      />
+      <div class="param-inline">
+        <!-- 身份证/地址：省份（可空） -->
+        <n-input
+          v-if="toolIs('idcard') || toolIs('address')"
+          :value="strVal('province')"
+          size="small"
+          placeholder="省份(可空)"
+          style="width: 120px"
+          @update:value="set('province', $event)"
+        />
+        <!-- 身份证/姓名：性别 -->
+        <n-select
+          v-if="toolIs('idcard') || toolIs('name')"
+          :value="strVal('gender')"
+          :options="GENDER_OPTIONS"
+          size="small"
+          placeholder="性别"
+          style="width: 90px"
+          @update:value="set('gender', $event)"
+        />
+        <!-- 手机号：运营商 -->
+        <n-select
+          v-if="toolIs('phone')"
+          :value="strVal('carrier')"
+          :options="CARRIER_OPTIONS"
+          size="small"
+          placeholder="运营商"
+          style="width: 100px"
+          @update:value="set('carrier', $event)"
+        />
+        <!-- 银行卡：银行 + 卡类型 -->
+        <template v-if="toolIs('bankcard')">
+          <n-input
+            :value="strVal('bank')"
+            size="small"
+            placeholder="银行(可空)"
+            style="width: 140px"
+            @update:value="set('bank', $event)"
+          />
+          <n-select
+            :value="strVal('card_type')"
+            :options="CARD_TYPE_OPTIONS"
+            size="small"
+            placeholder="卡类型"
+            style="width: 96px"
+            @update:value="set('card_type', $event)"
+          />
+        </template>
+        <!-- 姓名：语言 -->
+        <n-select
+          v-if="toolIs('name')"
+          :value="strVal('language')"
+          :options="LANGUAGE_OPTIONS"
+          size="small"
+          placeholder="语言"
+          style="width: 90px"
+          @update:value="set('language', $event)"
+        />
+        <!-- 信用代码：登记部门（可空） -->
+        <n-input
+          v-if="toolIs('credit_code')"
+          :value="strVal('department')"
+          size="small"
+          placeholder="登记部门(可空)"
+          style="width: 140px"
+          @update:value="set('department', $event)"
+        />
+        <!-- 纳税人识别号：类型 -->
+        <n-select
+          v-if="toolIs('taxpayer_id')"
+          :value="strVal('taxpayer_type')"
+          :options="TAXPAYER_TYPE_OPTIONS"
+          size="small"
+          placeholder="类型"
+          style="width: 96px"
+          @update:value="set('taxpayer_type', $event)"
+        />
+        <!-- 地址：精度 -->
+        <n-select
+          v-if="toolIs('address')"
+          :value="strVal('precision')"
+          :options="PRECISION_OPTIONS"
+          size="small"
+          placeholder="精度"
+          style="width: 160px"
+          @update:value="set('precision', $event)"
+        />
+      </div>
+    </div>
+
     <!-- 随机时间段 -->
     <n-date-picker
       v-else-if="strategy === 'RANDOM_TIME_RANGE'"
@@ -162,6 +262,50 @@ const OPERATOR_OPTIONS = [
   { label: '+', value: 'add' },
   { label: '−', value: 'subtract' },
 ]
+
+// TOOL_GEN 工具选项与各工具的可选参数选项
+const TOOL_OPTIONS = [
+  { label: '身份证号', value: 'idcard' },
+  { label: '手机号', value: 'phone' },
+  { label: '银行卡号', value: 'bankcard' },
+  { label: '姓名', value: 'name' },
+  { label: '统一社会信用代码', value: 'credit_code' },
+  { label: '纳税人识别号', value: 'taxpayer_id' },
+  { label: '地址', value: 'address' },
+]
+const GENDER_OPTIONS = [
+  { label: '随机', value: 'random' },
+  { label: '男', value: 'male' },
+  { label: '女', value: 'female' },
+]
+const CARRIER_OPTIONS = [
+  { label: '随机', value: 'random' },
+  { label: '移动', value: 'mobile' },
+  { label: '联通', value: 'unicom' },
+  { label: '电信', value: 'telecom' },
+]
+const CARD_TYPE_OPTIONS = [
+  { label: '借记卡', value: 'debit' },
+  { label: '信用卡', value: 'credit' },
+]
+const LANGUAGE_OPTIONS = [
+  { label: '中文', value: 'zh' },
+  { label: '英文', value: 'en' },
+]
+const TAXPAYER_TYPE_OPTIONS = [
+  { label: '企业', value: 'enterprise' },
+  { label: '个人', value: 'personal' },
+]
+const PRECISION_OPTIONS = [
+  { label: '省市区街道+门牌', value: 'full' },
+  { label: '省市区', value: 'province_city_district' },
+  { label: '省市', value: 'province_city' },
+]
+
+/** 当前是否选中某工具（TOOL_GEN 参数区条件渲染用） */
+function toolIs(tool: string): boolean {
+  return strVal('tool') === tool
+}
 
 function numVal(key: string): number | null {
   const v = props.modelValue[key]
