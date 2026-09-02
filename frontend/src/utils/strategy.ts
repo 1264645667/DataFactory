@@ -88,6 +88,8 @@ export function getStrategyOptions(column: ColumnInfo): StrategyOption[] {
     { label: STRATEGY_LABELS.CUSTOM_VALUE, value: 'CUSTOM_VALUE' },
     { label: STRATEGY_LABELS.PICK_FROM_LIST, value: 'PICK_FROM_LIST' },
     { label: STRATEGY_LABELS.ITERATE_LIST, value: 'ITERATE_LIST' },
+    // 指定值自增：数字字段生成纯数字，字符字段可配前缀生成 test0001 这类序列
+    { label: STRATEGY_LABELS.INCR_FROM, value: 'INCR_FROM' },
   ]
 }
 
@@ -194,6 +196,17 @@ export function validateStrategyParams(
     case 'INCR_FROM': {
       const start = Number(params.start)
       if (!Number.isInteger(start) || start < 1) return '起始值必须为正整数'
+      const padLength = params.pad_length
+      if (padLength != null && padLength !== '') {
+        const p = Number(padLength)
+        if (!Number.isInteger(p) || p < 0) return '补零位数必须为非负整数'
+      }
+      // 字符字段：前缀 + 数字位长度不能超过字段最大长度
+      const prefix = String(params.prefix ?? '')
+      if (maxLen && isCharType(column.data_type) && (prefix || padLength)) {
+        const estimated = prefix.length + Math.max(Number(padLength) || 0, String(start).length)
+        if (estimated > maxLen) return `前缀+数字长度约 ${estimated}，超过字段最大长度 ${maxLen}`
+      }
       return null
     }
     case 'RANDOM_TIME_RANGE': {

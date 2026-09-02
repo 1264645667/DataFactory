@@ -787,13 +787,14 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 .assoc-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  position: relative;
+  display: block;
+  padding: 8px 48px 8px 12px; /* 右侧预留删除按钮空间 */
   border: 1px solid rgba(124, 58, 237, 0.2);
   border-radius: 8px;
   font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere; /* 长表名/字段名任意断行，避免 flex 压缩成一字一行 */
 }
 .assoc-source {
   color: #a78bfa;
@@ -801,7 +802,14 @@ onMounted(async () => {
 }
 .assoc-target {
   color: #60a5fa;
-  flex: 1;
+}
+.assoc-item .dim {
+  padding: 0 4px;
+}
+.assoc-item :deep(.n-button) {
+  position: absolute;
+  right: 8px;
+  top: 8px;
 }
 .assoc-add {
   border-top: 1px solid rgba(148, 163, 184, 0.12);

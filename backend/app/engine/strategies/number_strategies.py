@@ -39,7 +39,15 @@ def prefetch_incr_range(redis_client, task_id: int, table: str, column: str, cou
 
 
 class IncrFromStrategy(BaseStrategy):
-    """INCR_FROM：指定起始值自增（参数 start，正整数）"""
+    """INCR_FROM：指定起始值自增
+
+    参数：
+    - start: 起始值（正整数，必填）
+    - prefix: 字符串前缀（可选，用于 varchar/char 等字符字段生成 test0001 这类带前缀序列）
+    - pad_length: 数字部分补零位数（可选，如 4 → 0001；不填则不补零）
+
+    不传 prefix/pad_length 时行为与旧版一致（纯数字自增），向后兼容。
+    """
 
     strategy_code = "INCR_FROM"
 
@@ -47,6 +55,19 @@ class IncrFromStrategy(BaseStrategy):
         start = params.get("start", params.get("start_value"))
         if not isinstance(start, int) or isinstance(start, bool) or start < 1:
             raise ValueError("起始值必须为正整数")
+        prefix = params.get("prefix")
+        if prefix is not None and not isinstance(prefix, str):
+            raise ValueError("前缀必须为字符串")
+        pad_length = params.get("pad_length")
+        if pad_length is not None and pad_length != "":
+            if not isinstance(pad_length, int) or isinstance(pad_length, bool) or pad_length < 0:
+                raise ValueError("补零位数必须为非负整数")
+        # 字符字段：预估最大长度校验（前缀 + 数字位）
+        max_len = column_meta.get("char_max_length")
+        if (prefix or pad_length) and max_len:
+            estimated = len(prefix or "") + max(int(pad_length or 0), len(str(int(start))))
+            if estimated > int(max_len):
+                raise ValueError(f"前缀+数字长度约 {estimated}，超过字段最大长度 {max_len}")
 
     def generate(self, column_meta: dict, params: dict, index: int) -> Any:
         # range_start 由数据生成器在批前通过 Redis 批量预取注入（文档 6.4）；
@@ -54,4 +75,11 @@ class IncrFromStrategy(BaseStrategy):
         range_start = params.get("range_start")
         if range_start is None:
             range_start = int(params.get("start", params.get("start_value", 1)))
-        return int(range_start) + index
+        num = int(range_start) + index
+        prefix = params.get("prefix") or ""
+        pad_length = params.get("pad_length")
+        # 带前缀或补零 → 生成字符串；否则保持纯数字（向后兼容）
+        if prefix or pad_length:
+            num_str = str(num).zfill(int(pad_length)) if pad_length else str(num)
+            return f"{prefix}{num_str}"
+        return num

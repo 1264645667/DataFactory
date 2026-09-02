@@ -60,16 +60,32 @@
       </div>
     </div>
 
-    <!-- 指定值自增 -->
-    <n-input-number
-      v-else-if="strategy === 'INCR_FROM'"
-      :value="numVal('start')"
-      size="small"
-      :min="1"
-      placeholder="起始值"
-      style="width: 140px"
-      @update:value="set('start', $event)"
-    />
+    <!-- 指定值自增：前缀(可选) + 起始值 + 补零位数(可选)；字符字段配前缀可生成 test0001 这类序列 -->
+    <div v-else-if="strategy === 'INCR_FROM'" class="param-inline">
+      <n-input
+        :value="strVal('prefix')"
+        size="small"
+        placeholder="前缀(可空)"
+        style="width: 96px"
+        @update:value="set('prefix', $event)"
+      />
+      <n-input-number
+        :value="numVal('start')"
+        size="small"
+        :min="1"
+        placeholder="起始值"
+        style="width: 100px"
+        @update:value="set('start', $event)"
+      />
+      <n-input-number
+        :value="numVal('pad_length')"
+        size="small"
+        :min="0"
+        placeholder="补零位"
+        style="width: 88px"
+        @update:value="set('pad_length', $event)"
+      />
+    </div>
 
     <!-- 随机时间段 -->
     <n-date-picker
