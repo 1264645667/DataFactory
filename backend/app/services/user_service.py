@@ -14,7 +14,7 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_user_permissions
+from app.api.deps import ADMIN_GROUP_TYPE, get_user_permissions
 from app.config import settings
 from app.core.redis_client import redis_client
 from app.core.security import (
@@ -293,6 +293,24 @@ async def _replace_user_menus(db: AsyncSession, user_id: int, menu_codes: list[s
     for menu_id in dict.fromkeys(menu_ids):
         db.add(UserMenu(user_id=user_id, menu_id=menu_id))
     return menu_codes
+
+
+async def list_group_members(db: AsyncSession, current_user: User) -> list[UserBrief]:
+    """本组成员简要列表（筛选下拉用，登录即可）：普通用户仅本组，管理员全量；仅含正常状态用户。"""
+    stmt = select(User).where(User.status == 1).order_by(User.id.asc())
+    if current_user.group_type != ADMIN_GROUP_TYPE:
+        stmt = stmt.where(User.group_type == current_user.group_type)
+    result = await db.execute(stmt)
+    return [
+        UserBrief(
+            id=u.id,
+            username=u.username,
+            real_name=u.real_name,
+            group_type=u.group_type,
+            avatar_index=u.avatar_index,
+        )
+        for u in result.scalars().all()
+    ]
 
 
 async def list_pending_users(db: AsyncSession) -> list[PendingUserItem]:

@@ -596,11 +596,11 @@ onMounted(async () => {
   try {
     const [dsRes, userRes] = await Promise.all([
       datasourceApi.list(),
-      usersApi.list({ page: 1, page_size: 100 }).catch(() => null),
+      usersApi.members().catch(() => null),
     ])
     datasourceOptions.value = dsRes.data.map((d) => ({ label: d.name, value: d.id }))
     if (userRes) {
-      memberOptions.value = (userRes.data.items ?? []).map((u) => ({ label: u.real_name, value: u.id }))
+      memberOptions.value = (userRes.data ?? []).map((u) => ({ label: u.real_name ?? u.username, value: u.id }))
     }
   } catch {
     // 下拉数据失败不阻塞页面

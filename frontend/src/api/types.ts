@@ -69,6 +69,15 @@ export interface PendingUser {
   created_at: string
 }
 
+/** 本组成员简要项（后端 UserBrief，筛选下拉用） */
+export interface MemberOption {
+  id: number
+  username: string
+  real_name: string | null
+  group_type: GroupType
+  avatar_index: number | null
+}
+
 /** 用户管理列表项（后端 UserListItem） */
 export interface AdminUserItem {
   id: number

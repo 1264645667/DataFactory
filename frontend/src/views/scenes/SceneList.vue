@@ -369,8 +369,8 @@ async function openHistory(row: SceneItem): Promise<void> {
 onMounted(async () => {
   loadList(1)
   try {
-    const userRes = await usersApi.list({ page: 1, page_size: 100 }).catch(() => null)
-    if (userRes) memberOptions.value = (userRes.data.items ?? []).map((u) => ({ label: u.real_name, value: u.id }))
+    const userRes = await usersApi.members().catch(() => null)
+    if (userRes) memberOptions.value = (userRes.data ?? []).map((u) => ({ label: u.real_name ?? u.username, value: u.id }))
   } catch {
     // 忽略
   }

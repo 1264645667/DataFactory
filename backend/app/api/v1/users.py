@@ -23,6 +23,7 @@ from app.schemas.user import (
     RejectRequest,
     ResetPasswordResponse,
     ApproveRequest,
+    UserBrief,
     UserListItem,
 )
 from app.services import user_service
@@ -44,6 +45,14 @@ async def list_pending(
 ) -> ApiResponse[list[PendingUserItem]]:
     items = await user_service.list_pending_users(db)
     return ApiResponse(data=items)
+
+
+@router.get("/members", summary="本组成员简要列表（筛选下拉用，登录即可）")
+async def list_members(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[UserBrief]]:
+    return ApiResponse(data=await user_service.list_group_members(db, current_user))
 
 
 @router.post("/{user_id}/approve", summary="审批通过并分配权限")

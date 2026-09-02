@@ -3,6 +3,7 @@ import type {
   AdminUserItem,
   ApiResponse,
   AuditLogItem,
+  MemberOption,
   PageResult,
   PendingUser,
 } from './types'
@@ -12,6 +13,10 @@ export const usersApi = {
   /** 待审批用户列表 */
   pending() {
     return request.get<unknown, ApiResponse<PendingUser[]>>('/v1/users/pending')
+  },
+  /** 本组成员简要列表（筛选下拉用，登录即可，无需 USER:APPROVE 权限） */
+  members() {
+    return request.get<unknown, ApiResponse<MemberOption[]>>('/v1/users/members')
   },
   /** 审批通过并分配权限 */
   approve(id: number, body: { menu_codes: string[] }) {
