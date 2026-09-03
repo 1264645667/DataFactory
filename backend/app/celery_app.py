@@ -57,4 +57,9 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.clean_notifications",
         "schedule": crontab(hour=3, minute=0),
     },
+    # 每天凌晨 03:30 清理操作日志（每人仅保留最近 200 条）
+    "clean-audit-logs": {
+        "task": "tasks.clean_audit_logs",
+        "schedule": crontab(hour=3, minute=30),
+    },
 }

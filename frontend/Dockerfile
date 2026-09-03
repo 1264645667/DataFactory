@@ -3,8 +3,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # 优先复制依赖清单，充分利用 Docker 层缓存
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+# npm ci 严格按 lockfile 安装，保证可复现构建
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npm run build

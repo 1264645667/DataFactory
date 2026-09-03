@@ -47,6 +47,8 @@ NOTIFICATION_RETENTION_DAYS = {
 }
 # 每用户最多保留消息条数（超出按时间倒序保留最新）
 NOTIFICATION_MAX_PER_USER = 500
+# 每用户最多保留操作日志条数（个人中心查询性能）
+AUDIT_LOG_MAX_PER_USER = 200
 
 
 @celery_app.task(bind=True, max_retries=0, name="tasks.clean_notifications")
@@ -109,5 +111,39 @@ def clean_notifications(self) -> dict:
             expired=expired_total, trimmed=trimmed_total, over_limit_users=len(over_limit_users),
         )
         return {"expired": expired_total, "trimmed": trimmed_total}
+    finally:
+        session.close()
+
+
+@celery_app.task(bind=True, max_retries=0, name="tasks.clean_audit_logs")
+def clean_audit_logs(self) -> dict:
+    """操作日志清理：每个操作人仅保留最近 200 条（df_audit_log 只增不减，防个人中心查询变慢）
+
+    实现说明：MySQL 不允许 DELETE 的目标表直接出现在子查询中，需套一层派生表（keep_ids）。
+    """
+    session = SyncSessionLocal()
+    try:
+        user_ids = [
+            row[0] for row in session.execute(
+                text("SELECT DISTINCT user_id FROM df_audit_log")
+            ).fetchall()
+        ]
+        trimmed = 0
+        for user_id in user_ids:
+            result = session.execute(
+                text(
+                    "DELETE FROM df_audit_log WHERE user_id = :user_id AND id NOT IN ("
+                    "  SELECT id FROM ("
+                    "    SELECT id FROM df_audit_log WHERE user_id = :user_id"
+                    "    ORDER BY id DESC LIMIT :keep"
+                    "  ) AS keep_ids"
+                    ")"
+                ),
+                {"user_id": user_id, "keep": AUDIT_LOG_MAX_PER_USER},
+            )
+            trimmed += result.rowcount or 0
+        session.commit()
+        logger.info("clean_audit_logs_done", trimmed=trimmed, users=len(user_ids))
+        return {"trimmed": trimmed, "users": len(user_ids)}
     finally:
         session.close()

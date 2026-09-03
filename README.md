@@ -407,12 +407,39 @@ print(r.keys('df:tables:*'))     # 表结构缓存
 
 ---
 
-## 5. 服务器部署（从 0 开始）
+## 5. 服务器部署（Docker，从 0 开始）
 
-> 目标：在一台 Linux 服务器上用 Docker Compose 拉起全部 8 个服务，通过 `http://服务器IP` 访问。
-> 配置参考：2C4G 起步（MySQL 缓冲池 2G + Worker 2G），建议 4C8G。
+> 目标：在一台 Linux 服务器上用 Docker Compose 拉起全部服务，通过 `http://服务器IP` 访问。
+> **数据库与 Redis 沿用现有公司实例**（MySQL 172.28.30.59:3306/data_factory、Redis 172.28.31.239:6379/db3），部署不新建这两者。
+> 配置参考：2C4G 起步，建议 4C8G（Worker 吃内存）。
 
-### 5.1 服务器准备
+### 5.1 服务清单与配置项说明
+
+Compose 编排包含 6 类服务（`docker-compose.yml`）：
+
+| 服务 | 说明 | 副本 |
+|---|---|---|
+| migrate | 一次性容器：启动前自动执行 `alembic upgrade head`（建表/加列，幂等） | 跑一次即退出 |
+| api | FastAPI 接口（uvicorn ×4 workers） | 2 |
+| worker-high | 造数执行（high 队列，celery -c 8） | 2 |
+| worker-normal | 数据源同步/回滚/清理（normal+low 队列，celery -c 4） | 1 |
+| beat | 定时任务（心跳 30s、02:00 全量同步、03:00 清通知、03:30 清操作日志） | 1（禁止扩容） |
+| nginx | 前端静态资源 + /api 反向代理 | 1 |
+
+`.env` 需要填写的配置项（其余用默认值）：
+
+| 变量 | 说明 | 取值 |
+|---|---|---|
+| DATABASE_URL | 系统库连接串（密码含特殊字符需 URL 编码） | 沿用现有：`mysql+aiomysql://popsicle:QY20Lsf%25%21PLfM25Ts%21@172.28.30.59:3306/data_factory` |
+| REDIS_URL | 系统 Redis（Celery broker + 进度/锁） | 沿用现有：`redis://:baiwang@172.28.31.239:6379/3` |
+| SECRET_KEY | JWT 签名密钥 | **必须新生成**（命令见 5.2） |
+| AES_KEY | 数据源密码 AES-256 加密密钥 | **必须沿用现有的 `backend/.env` 里的值**，否则库里数据源密码解不开；要换新密钥见 5.6 |
+| LOG_LEVEL | 日志级别 | 生产用 INFO |
+| NACOS_SERVER 等 | Nacos 配置中心 | 可选，不配则降级用代码默认值（不影响功能） |
+
+> **并发/线程数说明**：worker-high 的 `-c 8` 是 Celery 任务并发数（同时执行的造数任务数），每个任务内部执行器默认再开 8 线程（config.py 的 `MAX_WORKERS`）。目标库扛不住时优先调小 `-c`。要改执行器线程数，在 .env 里加 `MAX_WORKERS=8` 覆盖。
+
+### 5.2 服务器准备
 
 ```bash
 # Ubuntu 22.04+ 为例，安装 Docker 与 Compose 插件
@@ -424,86 +451,91 @@ docker compose version    # 确认 v2.x 可用
 sudo ufw allow 80/tcp
 ```
 
-### 5.2 上传代码并配置
+### 5.3 上传代码并配置
 
 ```bash
 # 方式一：git
 git clone <你的仓库地址> DataFactory && cd DataFactory
-# 方式二：本地打包上传（排除 node_modules/.venv/.runtime 等）
-#   本地：tar --exclude=node_modules --exclude=.venv -czvf df.tar.gz .
+# 方式二：本地打包上传（排除 node_modules/.venv/dist 等）
+#   本地：tar --exclude=node_modules --exclude=.venv --exclude=dist -czvf df.tar.gz .
 #   服务器：tar -xzvf df.tar.gz && cd DataFactory
 
 # 生成环境变量文件
 cp .env.example .env
 
-# 生成密钥（逐条执行，把输出粘贴进 .env 对应位置）
-python3 -c "import secrets; print(secrets.token_urlsafe(24))"          # → MYSQL_PASSWORD
-python3 -c "import secrets; print(secrets.token_urlsafe(24))"          # → MYSQL_ROOT_PASSWORD
-python3 -c "import secrets; print(secrets.token_hex(32))"              # → SECRET_KEY
-python3 -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"  # → AES_KEY
-python3 -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"  # → NACOS_AUTH_TOKEN 与 NACOS_PASSWORD
+# 生成 JWT 密钥（把输出粘贴进 .env 的 SECRET_KEY）
+python3 -c "import secrets; print(secrets.token_hex(32))"
 
-vi .env   # 填好上述 7 个值，其余保持默认
+# AES_KEY：把本地 backend/.env 里现有的 AES_KEY 原样抄进服务器 .env
+#   （查看本地值：cat backend/.env）
+#   ⚠️ 不要生成新的——库里 df_datasource.password 是用现有密钥加密的
+vi .env
 ```
 
-### 5.3 构建并启动
+### 5.4 构建并启动
 
 ```bash
 docker compose up -d --build      # 首次构建约 5~15 分钟（拉镜像+装依赖）
-docker compose ps                 # 8 个服务全部 Up (healthy)
+docker compose ps                 # 应看到 migrate(Exited 0) + api×2 + worker×3 + beat + nginx
 ```
 
-服务清单：`mysql / redis / nacos / api(×2) / worker-high(×2) / worker-normal / beat / nginx`。
+启动顺序由 compose 保证：`migrate` 先跑完数据库迁移（新建缺失的表/列，幂等），api/worker/beat 才会起来。
 
-### 5.4 验证部署
+### 5.5 验证部署
 
 ```bash
 # 1) 容器健康
 docker compose ps
 
 # 2) API 健康检查（容器内）
-docker compose exec api curl -s http://localhost:8000/api/health
+docker compose exec api python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:8000/api/health').read().decode())"
 # 期望：{"status":"UP","db":"UP","redis":"UP"}
 
-# 3) 查看启动日志（确认 init_data 成功、无 ERROR）
+# 3) 查看启动日志（确认无 ERROR；Nacos 连不上只是 WARNING 降级，可忽略）
 docker compose logs api | tail -30
 docker compose logs worker-high | tail -20
 
 # 4) 浏览器访问 http://服务器IP → 登录页 → popsicle / Avaritia14589
 ```
 
-### 5.5（可选）初始化 Nacos 配置中心
+### 5.6 AES_KEY 轮换（可选，只有要换新密钥时才需要）
 
-系统对 Nacos 不可用有降级，**跳过本步不影响任何功能**。需要热更新配置时：
+**直接沿用现有密钥可跳过本节**。要换新密钥时必须先重加密库里的数据源密码，顺序不能反：
 
-1. 浏览器访问 `http://服务器IP:8848/nacos`（默认账号 nacos/nacos，登录后立即改密）。
-2. 导入 Nacos 的 MySQL 表结构（Nacos 发行包 `conf/mysql-schema.sql`，或 GitHub nacos-group 获取）到 `nacos_db`：
-   ```bash
-   docker compose exec mysql mysql -u root -p$MYSQL_ROOT_PASSWORD nacos_db < mysql-schema.sql
-   ```
-3. 在控制台 `DATAFORGE_GROUP` 分组下按需创建 `dataforge-common.yaml`、`dataforge-celery.yaml` 等配置（格式见 `docs/popsicle_架构设计readme.md` 8.4 节），应用会自动拉取并热更新。
+```bash
+# 1. 先在服务器上把新密钥生成好
+python3 -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 
-### 5.6 生产加固建议
+# 2. 用旧密钥解密、新密钥重加密（在服务器项目目录下执行；密钥建议用环境变量传，避免留在 shell 历史）
+docker compose run --rm --no-deps \
+  -e AES_KEY_OLD='<现有 AES_KEY>' -e AES_KEY_NEW='<新 AES_KEY>' \
+  api python scripts/rekey_aes.py
+# 期望输出：完成：轮换 N 个，跳过 0 个。
+
+# 3. 改 .env 的 AES_KEY 为新密钥，重启全部服务
+docker compose up -d
+```
+
+脚本幂等可重跑：已用新密钥加密的行会自动跳过；任一行解密失败会中止且不写入。
+
+### 5.7 生产加固建议
 
 | 项 | 操作 |
 |---|---|
-| MySQL 端口 | 删除 compose 中 mysql 的 `ports: 3306:3306` 映射，仅内网访问 |
-| HTTPS | 取消 nginx 服务 443 端口注释，挂载 `./ssl` 证书目录，并在 `frontend/nginx.conf` 增加 443 server |
-| 副本扩容 | 造数压力大时 `docker compose up -d --scale worker-high=4`（注意目标库连接数，见架构文档 12.5） |
-| 日志 | 生产 `LOG_LEVEL=INFO`；MySQL 慢查询日志已开启（>0.5s 记录） |
-| 备份 | 定期备份 `mysql_data` 数据卷（系统数据）与目标业务库 |
+| HTTPS | 取消 compose 中 nginx 的 443 端口注释，挂载 `./ssl` 证书目录，并在 `frontend/nginx.conf` 增加 443 server |
+| 副本扩容 | 造数压力大时 `docker compose up -d --scale worker-high=4`（注意目标库连接数） |
+| Nacos | 需要配置热更新时把 `.env` 的 `NACOS_SERVER` 指向公司 Nacos 实例，Data ID 用 `popsicle_datafactory_config`、Group 用 `datafactory_group` |
+| 备份 | 定期备份系统库 data_factory（含 Case 配置/执行历史/回滚日志） |
 
-### 5.7 日常运维命令
+### 5.8 日常运维命令
 
 ```bash
 docker compose logs -f api                    # 跟踪 API 日志
 docker compose logs -f worker-high            # 跟踪造数日志
-docker compose up -d --build --no-deps api    # 仅重建发版 api
-docker compose exec api alembic upgrade head  # 执行数据库迁移
-docker compose exec mysql mysql -u dataforge -p dataforge_db   # 进 MySQL
-docker compose restart worker-high            # 重启 Worker
-docker compose down                           # 停止全部（数据卷保留）
-docker compose down -v                        # ⚠️ 连数据卷一起删除，不可恢复
+docker compose exec api alembic upgrade head  # 手动执行数据库迁移（正常启动已自动跑）
+docker compose restart worker-high worker-normal   # 重启 Worker（策略代码变更后需要）
+docker compose down                           # 停止全部（MySQL/Redis 是外部实例，无本地数据卷风险）
+docker compose up -d --build                  # 发版：重新构建并滚动拉起
 ```
 
 ---

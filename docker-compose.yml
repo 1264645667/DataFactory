@@ -30,6 +30,16 @@ x-api-env: &api-env
 
 services:
 
+  # ── 数据库迁移（一次性：api/worker 启动前执行 alembic upgrade head）───────
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: alembic upgrade head
+    restart: "no"
+    environment:
+      <<: *api-env
+
   # ── 应用服务 ────────────────────────────────────────────────────────────
 
   api:
@@ -39,8 +49,12 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      # python:3.11-slim 无 curl，用 urllib 探活
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -60,6 +74,9 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping", "-d", "celery@$$HOSTNAME"]
       interval: 30s
@@ -76,11 +93,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    # 普通 + 低优先级队列（数据源同步、通知等后台任务）
+    # 普通 + 低优先级队列（数据源同步、回滚、通知等后台任务）
     command: celery -A app.celery_app worker -Q normal,low -c 4 --loglevel=info
     restart: unless-stopped
     environment:
       <<: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -95,6 +115,9 @@ services:
     restart: unless-stopped
     environment:
       <<: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     deploy:
       replicas: 1               # Beat 必须单实例，禁止扩容
       resources:

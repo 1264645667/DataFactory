@@ -17,6 +17,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY app/ ./app/
 COPY alembic/ ./alembic/
+COPY scripts/ ./scripts/
 COPY alembic.ini pyproject.toml ./
 
 # 非 root 用户运行
