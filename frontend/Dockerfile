@@ -15,6 +15,8 @@ FROM nginx:alpine
 
 # 复制构建产物与 Nginx 配置
 COPY --from=builder /app/dist /usr/share/nginx/html
+# 主配置（pid 写 /tmp，规避容器内 /run 写受限）
+COPY nginx-main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

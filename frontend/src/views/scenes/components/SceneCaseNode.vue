@@ -108,6 +108,11 @@ function update(key: string, value: unknown): void {
   padding-bottom: 8px;
   border-bottom: 1px dashed rgba(148, 163, 184, 0.15);
 }
+.node-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .node-config {
   display: flex;
   flex-direction: column;

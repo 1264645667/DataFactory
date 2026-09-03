@@ -211,6 +211,8 @@ function isPointInCanvas(x: number, y: number): boolean {
  */
 function onCardPointerDown(e: PointerEvent, c: CaseItem): void {
   if (e.button !== 0) return // 仅响应左键
+  // 阻止浏览器原生文本选中，否则拖动时会选中整片区域（视觉上像所有卡片一起被拖动）
+  e.preventDefault()
   const payload = { case_id: c.id, case_name: c.case_name, main_table: c.main_table, datasource_name: c.datasource_name }
   const startX = e.clientX
   const startY = e.clientY
@@ -505,7 +507,7 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 10px 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  min-width: 180px;
+  width: 220px;
 }
 .scene-flow {
   height: 100%;

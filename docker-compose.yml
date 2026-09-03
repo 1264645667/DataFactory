@@ -111,7 +111,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     # 使用 Celery 内置 Scheduler（定时任务静态声明），单实例运行
-    command: celery -A app.celery_app beat --loglevel=info
+    # 调度状态文件写到可写的 /tmp，避免 appuser 无权限写 /app
+    command: celery -A app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     restart: unless-stopped
     environment:
       <<: *api-env
@@ -131,6 +132,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     restart: unless-stopped
+    # 部分内核/Docker 组合的默认 seccomp 策略会拦截 nginx 写 pid 的 pwrite 调用（EPERM），
+    # 容器内 nginx 仅做静态托管+反代，关闭 seccomp 过滤规避风险
+    security_opt:
+      - "seccomp=unconfined"
     ports:
       - "80:80"
       # - "443:443"     # 生产开启 HTTPS 时取消注释，并挂载证书目录
