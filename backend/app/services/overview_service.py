@@ -2,7 +2,7 @@
 
 覆盖：核心指标卡（7 指标，Redis 缓存 df:stats:{group}:daily 5min）、执行趋势（近 7/30/90 天）、
 执行状态分布、表操作量 Top10、成员贡献排行、执行记录明细（分页 + 筛选）。
-管理员看全量，普通用户强制 group_type 过滤（数据权限）。
+管理员看全量，普通用户看 本组 + 管理员 的数据（数据权限）。
 """
 
 import json
@@ -12,7 +12,7 @@ import structlog
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import group_filter_value
+from app.api.deps import group_scope_values
 from app.core.redis_client import redis_client
 from app.models.case import Case
 from app.models.scene import Scene, SceneExec
@@ -54,9 +54,9 @@ def _today_start() -> datetime:
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _group_conditions(model, group_type: int | None) -> list:
-    """分组过滤条件（None=管理员全量）。"""
-    return [model.group_type == group_type] if group_type is not None else []
+def _group_conditions(model, scope: list[int] | None) -> list:
+    """分组数据可见范围过滤条件（None=管理员全量；否则 本组+管理员 in_ 过滤）。"""
+    return [model.group_type.in_(scope)] if scope is not None else []
 
 
 # ── 核心指标卡 ───────────────────────────────────────────────────
@@ -64,7 +64,7 @@ def _group_conditions(model, group_type: int | None) -> list:
 
 async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetrics:
     """核心指标卡片数据，Redis 缓存 5 分钟。"""
-    group_type = group_filter_value(current_user)
+    scope = group_scope_values(current_user)
     cache_key = STATS_CACHE_KEY.format(group_type=current_user.group_type)
 
     # 缓存命中直接返回
@@ -80,10 +80,10 @@ async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetric
     thirty_days_ago = today - timedelta(days=30)
     seven_days_ago = today - timedelta(days=7)
 
-    case_cond = _group_conditions(Case, group_type)
-    scene_cond = _group_conditions(Scene, group_type)
-    task_cond = _group_conditions(ExecTask, group_type)
-    scene_exec_cond = _group_conditions(SceneExec, group_type)
+    case_cond = _group_conditions(Case, scope)
+    scene_cond = _group_conditions(Scene, scope)
+    task_cond = _group_conditions(ExecTask, scope)
+    scene_exec_cond = _group_conditions(SceneExec, scope)
 
     # 1. 总 Case 数 / 总场景数（未删除）
     total_case_count = int((await db.execute(
@@ -129,10 +129,10 @@ async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetric
         )
     )).scalar_one())
 
-    # 6. 本组成员数（管理员=全系统正常用户数）
+    # 6. 本组成员数（管理员=全系统正常用户数；成员数始终按本组统计，不含管理员组）
     member_cond = [User.status == 1]
-    if group_type is not None:
-        member_cond.append(User.group_type == group_type)
+    if scope is not None:
+        member_cond.append(User.group_type == current_user.group_type)
     group_member_count = int((await db.execute(
         select(func.count()).select_from(User).where(*member_cond)
     )).scalar_one())
@@ -194,8 +194,8 @@ async def get_metrics(db: AsyncSession, *, current_user: User) -> OverviewMetric
 
 async def get_trend(db: AsyncSession, *, current_user: User, days: int) -> TrendResponse:
     """执行趋势折线图近 N 天每日执行次数/造数条数/成功率。"""
-    group_type = group_filter_value(current_user)
-    task_cond = _group_conditions(ExecTask, group_type)
+    scope = group_scope_values(current_user)
+    task_cond = _group_conditions(ExecTask, scope)
     today = _today_start()
     start = today - timedelta(days=days - 1)
 
@@ -235,8 +235,8 @@ async def get_trend(db: AsyncSession, *, current_user: User, days: int) -> Trend
 
 async def get_status_dist(db: AsyncSession, *, current_user: User, days: int) -> StatusDistResponse:
     """执行状态分布饼图范围与趋势图同步（近 N 天）。"""
-    group_type = group_filter_value(current_user)
-    task_cond = _group_conditions(ExecTask, group_type)
+    scope = group_scope_values(current_user)
+    task_cond = _group_conditions(ExecTask, scope)
     start = _today_start() - timedelta(days=days - 1)
 
     result = await db.execute(
@@ -267,8 +267,8 @@ async def get_table_top10(db: AsyncSession, *, current_user: User, days: int) ->
     统计口径：df_exec_batch_log 中成功批次（status=1）的 batch_size 之和，
     关联表与主表各自独立成项（ExecTask.success_count 为全表合计，无法按表拆分）。
     """
-    group_type = group_filter_value(current_user)
-    task_cond = _group_conditions(ExecTask, group_type)
+    scope = group_scope_values(current_user)
+    task_cond = _group_conditions(ExecTask, scope)
     start = _today_start() - timedelta(days=days - 1)
 
     result = await db.execute(
@@ -301,8 +301,8 @@ async def get_table_top10(db: AsyncSession, *, current_user: User, days: int) ->
 
 async def get_member_rank(db: AsyncSession, *, current_user: User, days: int) -> list[MemberRankItem]:
     """成员贡献排行本组成员按造数条数降序，最多 10 人。"""
-    group_type = group_filter_value(current_user)
-    task_cond = _group_conditions(ExecTask, group_type)
+    scope = group_scope_values(current_user)
+    task_cond = _group_conditions(ExecTask, scope)
     start = _today_start() - timedelta(days=days - 1)
 
     result = await db.execute(
@@ -349,8 +349,8 @@ async def get_exec_records(
     table_name: str | None = None,
 ) -> PageData[ExecRecordItem]:
     """执行记录明细表（分页 + 筛选）。"""
-    group_type = group_filter_value(current_user)
-    conditions = _group_conditions(ExecTask, group_type)
+    scope = group_scope_values(current_user)
+    conditions = _group_conditions(ExecTask, scope)
     if start_time is not None:
         conditions.append(ExecTask.created_at >= start_time)
     if end_time is not None:

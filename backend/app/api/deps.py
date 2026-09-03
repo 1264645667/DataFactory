@@ -4,8 +4,8 @@
   权限列表每次请求实时从 df_user_menu/df_menu 读取（权限变更保存后立即生效，无需重新登录）。
 - require_permission(code)：权限校验工厂，管理员（group_type=99）隐式拥有全部权限。
 - PageParams：分页参数依赖（page/page_size，page_size 上限 100）。
-- group_filter_value / ensure_group_visible：分组数据权限辅助，
-  非管理员（group_type!=99）强制注入 group_type 过滤。
+- group_scope_values / ensure_group_visible：分组数据权限辅助，
+  普通用户可见/可操作 本组 + 管理员（99）数据，管理员全量。
 - ai_key_auth：AI 接口独立 API Key 认证（X-DataForge-AI-Key 头 + 状态/过期/限流校验）。
 """
 
@@ -142,25 +142,28 @@ class PageParams:
         return (self.page - 1) * self.page_size
 
 
-def group_filter_value(current_user: User) -> int | None:
-    """分组数据权限辅助：非管理员返回其 group_type（强制注入过滤），管理员返回 None（全量）。
+def group_scope_values(current_user: User) -> list[int] | None:
+    """数据可见范围（普通用户 = 本组 + 管理员数据；管理员 = None 全量不过滤）。
 
     用法::
 
-        group_type = group_filter_value(current_user)
-        if group_type is not None:
-            stmt = stmt.where(Model.group_type == group_type)
+        scope = group_scope_values(current_user)
+        if scope is not None:
+            stmt = stmt.where(Model.group_type.in_(scope))
     """
     if current_user.group_type == ADMIN_GROUP_TYPE:
         return None
-    return current_user.group_type
+    return [current_user.group_type, ADMIN_GROUP_TYPE]
 
 
 def ensure_group_visible(current_user: User, target_group_type: int, error_code: int) -> None:
-    """校验目标数据分组对当前用户可见，否则抛业务异常（按不存在处理，不泄露跨组数据）。"""
+    """校验目标数据分组对当前用户可见，否则抛业务异常（按不存在处理，不泄露数据）。
+
+    普通用户：可操作 本组 或 管理员（99） 的数据；管理员：可操作全部。
+    """
     if current_user.group_type == ADMIN_GROUP_TYPE:
         return
-    if target_group_type != current_user.group_type:
+    if target_group_type not in (current_user.group_type, ADMIN_GROUP_TYPE):
         raise BizException(error_code)
 
 

@@ -13,7 +13,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ensure_group_visible, group_filter_value
+from app.api.deps import ensure_group_visible, group_scope_values
 from app.celery_app import celery_app
 from app.core.redis_client import redis_client
 from app.engine.dep_analyzer import build_layers
@@ -192,16 +192,16 @@ async def _validate_scene_payload(
     case_ids = list({n.case_id for n in nodes})
     result = await db.execute(select(Case).where(Case.id.in_(case_ids)))
     case_map = {c.id: c for c in result.scalars().all()}
-    group_type = group_filter_value(current_user)
+    scope = group_scope_values(current_user)
     for node in nodes:
         case = case_map.get(node.case_id)
         if case is None or case.is_deleted == 1:
             raise BizException(
                 SCENE_NODE_CASE_DELETED, f"节点「{node.case_name}」引用的 Case 已删除，请替换"
             )
-        if group_type is not None and case.group_type != group_type:
+        if scope is not None and case.group_type not in scope:
             raise BizException(
-                SCENE_NODE_CASE_DELETED, f"节点「{node.case_name}」引用的 Case 不属于本组"
+                SCENE_NODE_CASE_DELETED, f"节点「{node.case_name}」引用的 Case 不在可见范围内"
             )
 
 
@@ -222,9 +222,10 @@ async def list_scenes(
 ) -> PageData[SceneListItem]:
     """场景列表（分组过滤 + 筛选 + 分页）。"""
     conditions = [Scene.is_deleted == 0]
-    group_type = group_filter_value(current_user)
-    if group_type is not None:
-        conditions.append(Scene.group_type == group_type)
+    # 数据权限：普通用户可见 本组 + 管理员 的场景
+    scope = group_scope_values(current_user)
+    if scope is not None:
+        conditions.append(Scene.group_type.in_(scope))
     if name:
         conditions.append(Scene.scene_name.like(f"%{name}%"))
     if created_by is not None:

@@ -11,7 +11,7 @@ import structlog
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ensure_group_visible, group_filter_value
+from app.api.deps import ensure_group_visible, group_scope_values
 from app.models.case import Case, CaseFolder
 from app.models.task import ExecTask
 from app.models.user import User
@@ -78,9 +78,10 @@ async def list_cases(
     列表查询显式指定列（禁 SELECT config_json 大字段，避免列表页性能问题）。
     """
     conditions = [Case.is_deleted == 0]
-    group_type = group_filter_value(current_user)
-    if group_type is not None:
-        conditions.append(Case.group_type == group_type)
+    # 数据权限：普通用户可见 本组 + 管理员 的 Case
+    scope = group_scope_values(current_user)
+    if scope is not None:
+        conditions.append(Case.group_type.in_(scope))
     if datasource_id is not None:
         conditions.append(Case.datasource_id == datasource_id)
     if folder_id is not None:
@@ -458,16 +459,16 @@ async def get_case_history(
 
 async def list_folders(db: AsyncSession, *, current_user: User) -> dict:
     """文件夹列表（分组隔离）：含各文件夹收纳数 + 全部/未分类计数。"""
-    group_type = group_filter_value(current_user)
-    folder_conditions = [] if group_type is None else [CaseFolder.group_type == group_type]
+    scope = group_scope_values(current_user)
+    folder_conditions = [] if scope is None else [CaseFolder.group_type.in_(scope)]
     folders = list(
         (await db.execute(
             select(CaseFolder).where(*folder_conditions).order_by(CaseFolder.id)
         )).scalars().all()
     )
     case_conditions = [Case.is_deleted == 0]
-    if group_type is not None:
-        case_conditions.append(Case.group_type == group_type)
+    if scope is not None:
+        case_conditions.append(Case.group_type.in_(scope))
     count_rows = (
         await db.execute(
             select(Case.folder_id, func.count())

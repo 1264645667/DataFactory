@@ -13,7 +13,7 @@ from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from app.api.deps import ensure_group_visible, group_filter_value
+from app.api.deps import ensure_group_visible, group_scope_values
 from app.celery_app import celery_app
 from app.core.dynamic_pool import pool_manager
 from app.core.redis_client import redis_client
@@ -92,9 +92,10 @@ async def list_datasources(
 ) -> list[DatasourceItem]:
     """数据源列表（分组隔离 + Redis 心跳状态 + 默认标记）。"""
     conditions = []
-    group_type = group_filter_value(current_user)
-    if group_type is not None:
-        conditions.append(Datasource.group_type == group_type)
+    # 数据权限：普通用户可见 本组 + 管理员 的数据源
+    scope = group_scope_values(current_user)
+    if scope is not None:
+        conditions.append(Datasource.group_type.in_(scope))
     if keyword:
         conditions.append(Datasource.name.like(f"%{keyword}%"))
 
