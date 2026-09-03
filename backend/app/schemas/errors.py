@@ -49,6 +49,8 @@ TASK_NOT_FOUND = 1305  # 执行任务不存在
 TASK_ALREADY_FINISHED = 1306  # 任务已结束，无法停止
 TARGET_COUNT_TOO_LARGE = 1307  # 目标造数量超过单次限制
 BATCH_RETRY_EXHAUSTED = 1308  # 批次重试已耗尽（3次），该批次跳过
+TASK_NOT_ROLLBACKABLE = 1309  # 任务无可回滚数据（表无主键/规模超阈值未采集/已回滚）
+TASK_ROLLBACK_CONFLICT = 1310  # 任务已回滚或回滚进行中
 
 # ── Case 模块（1400~1499）───────────────────────────────────
 CASE_NOT_FOUND = 1400  # Case 不存在或已被删除
@@ -105,6 +107,8 @@ ERROR_MESSAGES: dict[int, str] = {
     TASK_ALREADY_FINISHED: "任务已结束，无法停止",
     TARGET_COUNT_TOO_LARGE: "目标造数量超过单次限制",
     BATCH_RETRY_EXHAUSTED: "批次重试已耗尽（3次），该批次跳过",
+    TASK_NOT_ROLLBACKABLE: "任务无可回滚数据（表缺少单列主键、规模超阈值未采集或已全部回滚）",
+    TASK_ROLLBACK_CONFLICT: "任务已回滚或回滚进行中",
     CASE_NOT_FOUND: "Case 不存在或已被删除",
     CASE_NAME_TAKEN: "该数据源下已存在同名 Case",
     CASE_SCHEMA_OUTDATED: "检测到表结构已更新，以下字段配置可能失效",

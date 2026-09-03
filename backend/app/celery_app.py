@@ -27,8 +27,8 @@ celery_app.conf.update(
         "tasks.execute_data_gen": {"queue": "high"},  # 造数执行，高优先
         "tasks.execute_scene": {"queue": "high"},  # 场景调度，高优先
         "tasks.sync_datasource": {"queue": "normal"},  # 数据源同步
+        "tasks.rollback_exec_task": {"queue": "normal"},  # 执行回滚
         "tasks.heartbeat_check": {"queue": "low"},  # 心跳检测
-        "tasks.scheduled_sync": {"queue": "low"},  # 定时同步
     },
     task_default_queue="normal",
     # 可靠性消费后再 ack，防止 Worker 崩溃丢任务
@@ -54,7 +54,7 @@ celery_app.conf.beat_schedule = {
     },
     # 每天凌晨 03:00 清理过期消息
     "cleanup-notifications": {
-        "task": "tasks.scheduled_cleanup_notifications",
+        "task": "tasks.clean_notifications",
         "schedule": crontab(hour=3, minute=0),
     },
 }

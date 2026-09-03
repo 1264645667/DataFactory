@@ -20,8 +20,20 @@
       <n-button size="small" :loading="syncing" class="gradient-btn" @click="handleSync">立即刷新</n-button>
     </div>
 
+    <!-- Redis 数据源：无表结构，进入 Redis 造数配置 -->
+    <div v-if="isRedisDs" class="table-card gradient-border-card redis-entry">
+      <n-icon size="40" color="#f59e0b"><FlashOutline /></n-icon>
+      <h3>Redis 造数</h3>
+      <p class="dim">
+        当前数据源为 Redis（db{{ current?.database_name ?? 0 }}），无需表结构同步。
+        通过 Key 模板 + 字段策略直接造数，支持 string/json/hash/list/set/zset，
+        支持「每行一个 Key」与「聚合单 Key」两种模式。
+      </p>
+      <n-button class="gradient-btn" size="small" @click="goRedisConfig">新建 Redis 造数 Case</n-button>
+    </div>
+
     <!-- 表列表 -->
-    <div class="table-card gradient-border-card">
+    <div v-else class="table-card gradient-border-card">
       <div class="table-toolbar">
         <n-input
           v-model:value="keyword"
@@ -75,8 +87,8 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { SearchOutline } from '@vicons/ionicons5'
-import { NButton, NTag, type DataTableColumns } from 'naive-ui'
+import { SearchOutline, FlashOutline } from '@vicons/ionicons5'
+import { NButton, NIcon, NTag, type DataTableColumns } from 'naive-ui'
 import { engineApi } from '@/api/engine'
 import { casesApi } from '@/api/cases'
 import { datasourceApi } from '@/api/datasource'
@@ -98,6 +110,14 @@ const page = ref(1)
 const pageSize = ref(20)
 
 const dsOptions = computed(() => list.value.map((d) => ({ label: d.name, value: d.id })))
+
+/** 当前数据源是否为 Redis 类型（切换到 Redis 时展示造数入口而非表列表） */
+const isRedisDs = computed(() => (current.value?.db_type || '').toLowerCase() === 'redis')
+
+/** 进入 Redis 造数配置页 */
+function goRedisConfig(): void {
+  router.push({ name: 'RedisConfig', query: { datasource_id: currentId.value } })
+}
 
 // 连接状态灯：status=3 为同步中；其余看心跳 online（true 在线 / false 离线 / null 未检测）
 const statusText = computed(() => {
@@ -169,6 +189,12 @@ function rowProps(): { style: string } {
 
 async function loadTables(): Promise<void> {
   if (!currentId.value) return
+  if (isRedisDs.value) {
+    // Redis 数据源无表结构，跳过表列表加载
+    tables.value = []
+    firstLoading.value = false
+    return
+  }
   loading.value = true
   try {
     const res = await engineApi.tables(currentId.value)
@@ -318,5 +344,22 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+.redis-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 20px;
+  text-align: center;
+}
+.redis-entry h3 {
+  margin: 0;
+  color: #e2e8f0;
+}
+.redis-entry p {
+  max-width: 520px;
+  margin: 0 0 8px;
+  line-height: 1.8;
 }
 </style>

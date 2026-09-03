@@ -35,7 +35,7 @@ from app.engine.db_pool import get_sync_engine
 from app.engine.dep_analyzer import build_insert_order
 from app.engine.strategies.number_strategies import init_incr_counter
 from app.engine.strategies.registry import get_strategy
-from app.models import Case, ExecBatchLog, ExecTask
+from app.models import Case, ExecBatchLog, ExecRollbackLog, ExecTask
 
 logger = structlog.get_logger(__name__)
 
@@ -141,19 +141,44 @@ class _CaseContext:
         self.config = config
         self.main_table = config["main_table"]
         self.associations: list[dict] = config.get("associations") or []
-        self.engine = engine
+        self.engine = engine  # 主数据源 Engine（redis Case 为 None）
+        # 纯 Redis 造数 Case（config.case_type == "redis"）
+        self.is_redis_case = (config.get("case_type") or "mysql") == "redis"
+        # 跨数据源：{表名: 数据源ID}（缺省为任务主数据源）
+        self.table_ds: dict[str, int] = {
+            str(k): int(v) for k, v in (config.get("table_datasources") or {}).items()
+        }
+        # 表 → Engine 缓存（含主表）；跨数据源关联时按需构建
+        self.engines: dict[str, Any] = {}
+        if engine is not None:
+            self.engines[self.main_table] = engine
+        # MySQL Case → Redis 联动同步配置
+        self.redis_syncs: list[dict] = config.get("redis_syncs") or []
         # 每张表的字段配置 {table_name: [field_config, ...]}
         self.table_field_configs: dict[str, list[dict]] = {}
         # 拓扑排序后的插入顺序
         self.insert_order: list[str] = []
         # ITERATE_LIST 驱动信息（普通模式为 None）
         self.iterate_driver: dict | None = None
+        # 是否采集回滚数据（超阈值任务跳过，控制 df_exec_rollback_log 体积）
+        self.capture_rollback = True
         # 执行参数（settings 提供，含默认值兜底）
         self.max_workers = int(getattr(settings, "MAX_WORKERS", 8) or 8)
         self.max_retry = int(getattr(settings, "BATCH_MAX_RETRY", 3) or 3)
         self.fail_rate_threshold = float(getattr(settings, "FAIL_RATE_THRESHOLD", 0.5) or 0.5)
         self.batch_size = calc_batch_size(int(task.target_count or 0))
         self.start_monotonic = time.time()
+
+    def engine_for(self, table: str):
+        """取表所属数据源的 Engine（跨数据源关联时按 table_datasources 解析）"""
+        if table not in self.engines:
+            ds_id = self.table_ds.get(table, self.task.datasource_id)
+            self.engines[table] = get_sync_engine(ds_id)
+        return self.engines[table]
+
+    def ds_of(self, table: str) -> int:
+        """取表所属数据源 ID"""
+        return self.table_ds.get(table, self.task.datasource_id)
 
 
 def _new_stats() -> dict:
@@ -167,6 +192,12 @@ def _validate_config(config: dict) -> None:
     """快照配置基础校验"""
     if not isinstance(config, dict):
         raise ValueError("Case 配置快照格式非法")
+    # 纯 Redis 造数 Case：校验 redis_config 而非表结构
+    if (config.get("case_type") or "mysql") == "redis":
+        redis_cfg = config.get("redis_config")
+        if not isinstance(redis_cfg, dict) or not redis_cfg.get("key_template"):
+            raise ValueError("Redis 造数配置缺少 key_template")
+        return
     if not config.get("main_table"):
         raise ValueError("Case 配置缺少主表(main_table)")
     field_configs = config.get("field_configs")
@@ -262,8 +293,9 @@ def _build_table_field_configs(session, ctx: _CaseContext) -> None:
         if table in related_overrides:
             ctx.table_field_configs[table] = related_overrides[table]
         else:
+            # 跨数据源：按表所属数据源读取字段元数据缓存
             ctx.table_field_configs[table] = _infer_field_configs_from_cache(
-                session, ctx.task.datasource_id, table
+                session, ctx.ds_of(table), table
             )
 
 
@@ -416,10 +448,10 @@ def _expire_incr_counters(ctx: _CaseContext) -> None:
 
 # 批量插入（工作线程内执行）
 
-def _bulk_insert(engine, table: str, rows: list[dict]) -> None:
-    """原生批量 VALUES 插入"""
+def _bulk_insert(engine, table: str, rows: list[dict]) -> int | None:
+    """原生批量 VALUES 插入；返回首个自增 ID（无自增列时 None，用于回滚区间定位）"""
     if not rows:
-        return
+        return None
     columns = [_safe_ident(column) for column in rows[0].keys()]
     col_names = ", ".join(f"`{column}`" for column in columns)
     placeholders = ", ".join(f":{column}" for column in columns)
@@ -433,12 +465,18 @@ def _bulk_insert(engine, table: str, rows: list[dict]) -> None:
         if disable_unique:
             conn.exec_driver_sql("SET SESSION unique_checks=0")
         try:
-            conn.execute(sql, rows)
+            result = conn.execute(sql, rows)
         finally:
             if disable_fk:
                 conn.exec_driver_sql("SET SESSION foreign_key_checks=1")
             if disable_unique:
                 conn.exec_driver_sql("SET SESSION unique_checks=1")
+    # pymysql 多行 INSERT 的 lastrowid 为本批分配的首个自增值（区间连续）
+    try:
+        lastrowid = result.lastrowid
+    except Exception:  # noqa: BLE001
+        lastrowid = None
+    return int(lastrowid) if lastrowid else None
 
 
 def _table_result(table: str, status: int, size: int, retry_times: int,
@@ -457,15 +495,20 @@ def _table_result(table: str, status: int, size: int, retry_times: int,
 
 
 def _insert_with_retry(ctx: _CaseContext, table: str, rows: list[dict], batch_no: int) -> dict:
-    """单表批量 INSERT，失败原地重试 max_retry 次（指数退避 1s/2s/4s）"""
+    """单表批量 INSERT，失败原地重试 max_retry 次（指数退避 1s/2s/4s）
+
+    返回结果附带 lastrowid（自增主键回滚区间定位）与实际生成的行数据（回滚主键值提取）。
+    """
     start_ts = time.time()
     start_at = datetime.now()
     retry_times = 0
     last_error: str | None = None
     while retry_times <= ctx.max_retry:
         try:
-            _bulk_insert(ctx.engine, table, rows)
-            return _table_result(table, BATCH_STATUS_SUCCESS, len(rows), retry_times, None, start_at, start_ts)
+            lastrowid = _bulk_insert(ctx.engine_for(table), table, rows)
+            result = _table_result(table, BATCH_STATUS_SUCCESS, len(rows), retry_times, None, start_at, start_ts)
+            result["lastrowid"] = lastrowid
+            return result
         except Exception as exc:  # noqa: BLE001 — 目标库异常需兜底重试
             last_error = str(exc)[:500]
             retry_times += 1
@@ -486,11 +529,11 @@ def _insert_with_retry(ctx: _CaseContext, table: str, rows: list[dict], batch_no
 
 
 def _sample_source_values(ctx: _CaseContext, source_table: str, source_column: str, size: int) -> list:
-    """断点重试场景：从源表采样真实值用于关联注入，保证外键一致"""
+    """断点重试场景：从源表采样真实值用于关联注入，保证外键一致（跨数据源时用源表所属数据源）"""
     sql = text(
         f"SELECT `{_safe_ident(source_column)}` FROM `{_safe_ident(source_table)}` LIMIT :limit_size"
     )
-    with ctx.engine.connect() as conn:
+    with ctx.engine_for(source_table).connect() as conn:
         rows = conn.execute(sql, {"limit_size": size}).fetchall()
     values = [row[0] for row in rows]
     if not values:
@@ -501,10 +544,42 @@ def _sample_source_values(ctx: _CaseContext, source_table: str, source_column: s
     return values[:size]
 
 
+def _capture_mysql_rollback(ctx: _CaseContext, table: str, rows: list[dict],
+                            lastrowid: int | None) -> dict | None:
+    """提取已插入批次的回滚定位信息（仅单列主键表；复合主键/无主键返回 None 不支持回滚）
+
+    - 自增主键（SKIP 策略）：多行 INSERT 分配连续区间，lastrowid 为区间首值 → range 模式
+    - 生成值主键（SNOWFLAKE/UUID/INCR_FROM 等）：直接从行数据提取 → values 模式
+    """
+    pk_fields = [fc for fc in (ctx.table_field_configs.get(table) or []) if fc.get("is_primary_key")]
+    if len(pk_fields) != 1:
+        return None
+    pk = pk_fields[0]
+    column = pk["column_name"]
+    if (pk.get("strategy") or "").upper() == "SKIP":
+        if lastrowid is None or not rows:
+            return None
+        payload = {"mode": "range", "pk": column,
+                   "start": int(lastrowid), "end": int(lastrowid) + len(rows) - 1}
+    else:
+        values = [row.get(column) for row in rows]
+        if not values or any(v is None for v in values):
+            return None
+        payload = {"mode": "values", "pk": column, "values": values}
+    return {
+        "target_type": "mysql",
+        "datasource_id": ctx.ds_of(table),
+        "table_name": table,
+        "pk": column,
+        "payload": payload,
+        "row_count": len(rows),
+    }
+
+
 def _execute_batch(ctx: _CaseContext, batch_no: int, size: int,
                    round_no: int | None = None, drive_value: Any = None,
                    only_tables: list[str] | None = None) -> dict:
-    """单个批次执行（工作线程）：生成数据 → 按依赖顺序插入各表
+    """单个批次执行（工作线程）：生成数据 → 按依赖顺序插入各表 → Redis 联动同步
 
     :param only_tables: 仅插入指定表（断点重试用）；None 表示按完整插入顺序
     线程安全说明：仅访问目标库 Engine（线程安全）与 Redis 客户端（线程安全），
@@ -517,7 +592,7 @@ def _execute_batch(ctx: _CaseContext, batch_no: int, size: int,
         insert_tables = list(ctx.insert_order)
 
     batch_result = {"batch_no": batch_no, "size": size, "round_no": round_no,
-                    "drive_value": drive_value, "tables": []}
+                    "drive_value": drive_value, "tables": [], "rollbacks": []}
     # 本批已生成的行数据（关联注入的取值来源）
     generated: dict[str, list[dict]] = {}
 
@@ -578,7 +653,14 @@ def _execute_batch(ctx: _CaseContext, batch_no: int, size: int,
 
         # 4) 批量插入（含原地重试）
         table_result = _insert_with_retry(ctx, table, rows, batch_no)
+        lastrowid = table_result.pop("lastrowid", None)
         batch_result["tables"].append(table_result)
+
+        # 5) 回滚定位信息采集（仅成功批次；失败批次未落库无需回滚）
+        if table_result["status"] == BATCH_STATUS_SUCCESS and ctx.capture_rollback:
+            rb = _capture_mysql_rollback(ctx, table, rows, lastrowid)
+            if rb is not None:
+                batch_result["rollbacks"].append(rb)
 
         if table == ctx.main_table and table_result["status"] == BATCH_STATUS_FAILED:
             # 主表插入失败：关联表跳过（避免插入无对应主表行的孤儿数据）
@@ -590,13 +672,40 @@ def _execute_batch(ctx: _CaseContext, batch_no: int, size: int,
                 )
             break
 
+    # 6) Redis 联动同步：整批所有表成功后执行（断点重试 only_tables 模式不执行，
+    #    避免与原始批次重复写入；重试场景的联动数据请通过回滚后重新执行补齐）
+    if ctx.redis_syncs and only_tables is None:
+        mysql_ok = (
+            len(batch_result["tables"]) == len(insert_tables)
+            and all(t["status"] == BATCH_STATUS_SUCCESS for t in batch_result["tables"])
+        )
+        if mysql_ok and generated:
+            from app.engine import redis_gen  # 延迟导入避免循环依赖
+            sync_results = redis_gen.execute_redis_syncs(ctx, generated, batch_no, size)
+            for entry in sync_results:
+                rb = entry.pop("rollback", None)
+                if rb is not None and ctx.capture_rollback and entry["status"] == BATCH_STATUS_SUCCESS:
+                    rb["table_name"] = entry["table"]
+                    rb["pk"] = None
+                    batch_result["rollbacks"].append(rb)
+                batch_result["tables"].append(entry)
+        else:
+            # 存在失败表：联动整体跳过并记失败日志（保持 Redis 与 MySQL 数据一致）
+            start_ts = time.time()
+            for sync_cfg in ctx.redis_syncs:
+                label = sync_cfg.get("name") or sync_cfg.get("key_template") or "sync"
+                batch_result["tables"].append(
+                    _table_result(f"redis:{label}"[:200], BATCH_STATUS_FAILED, size, 0,
+                                  "本批存在失败表，Redis 联动跳过", datetime.now(), start_ts)
+                )
+
     return batch_result
 
 
 # 批次结果记录（主线程）
 
 def _record_batch_result(ctx: _CaseContext, session, batch_result: dict, stats: dict) -> None:
-    """主线程统一写批次日志 + 更新 Redis 进度 + 累计统计"""
+    """主线程统一写批次日志 + 回滚定位日志 + 更新 Redis 进度 + 累计统计"""
     for table_result in batch_result["tables"]:
         batch_log = ExecBatchLog(
             task_id=ctx.task_id,
@@ -624,6 +733,21 @@ def _record_batch_result(ctx: _CaseContext, session, batch_result: dict, stats: 
                 f"{table_result['table']} 批次{batch_result['batch_no']}: {table_result['error']}"
             )
             _progress_fail(ctx, table_result["table"], table_result["size"])
+    # 回滚定位日志（仅成功写入的批次产出；df_exec_rollback_log）
+    for rb in batch_result.get("rollbacks") or []:
+        session.add(ExecRollbackLog(
+            task_id=ctx.task_id,
+            target_type=rb["target_type"],
+            datasource_id=rb["datasource_id"],
+            table_name=rb["table_name"],
+            batch_no=batch_result["batch_no"],
+            round_no=batch_result["round_no"],
+            pk_column=rb.get("pk"),
+            pk_payload=json.dumps(rb["payload"], ensure_ascii=False, default=str),
+            row_count=rb["row_count"],
+            rolled_back=0,
+            created_at=datetime.now(),
+        ))
     session.commit()
 
 
@@ -850,6 +974,10 @@ def _finalize_task(ctx: _CaseContext, session, stats_list: list[dict], iterate_m
 
     _write_final_progress(ctx, final)
     _expire_incr_counters(ctx)
+    # 清理模板 {incr} 计数器（Redis 联动/纯 Redis 造数）
+    if ctx.is_redis_case or ctx.redis_syncs:
+        from app.engine import redis_gen
+        redis_gen.cleanup_incr_counters(ctx.task_id)
     logger.info(
         "exec_task_finish",
         task_no=ctx.task_no, status=final,
@@ -895,6 +1023,18 @@ def _prepare_context(session, task: ExecTask) -> _CaseContext:
     """解析配置并构建执行上下文（含全部静态校验）"""
     config = json.loads(task.case_snapshot)
     _validate_config(config)
+
+    # 纯 Redis 造数 Case：无 MySQL Engine，插入顺序即 redis 展示名
+    if (config.get("case_type") or "mysql") == "redis":
+        ctx = _CaseContext(task, config, None)
+        ctx.insert_order = [ctx.main_table]
+        redis_cfg = config.get("redis_config") or {}
+        ctx.table_field_configs[ctx.main_table] = redis_cfg.get("field_configs") or []
+        _validate_all_strategies(ctx)
+        _init_incr_counters(ctx)
+        _decide_rollback_capture(ctx)
+        return ctx
+
     engine = get_sync_engine(task.datasource_id)
     ctx = _CaseContext(task, config, engine)
     _build_table_field_configs(session, ctx)
@@ -903,7 +1043,25 @@ def _prepare_context(session, task: ExecTask) -> _CaseContext:
     ctx.iterate_driver = detect_iterate_driver(config)
     _validate_all_strategies(ctx)
     _init_incr_counters(ctx)
+    _decide_rollback_capture(ctx)
     return ctx
+
+
+def _decide_rollback_capture(ctx: _CaseContext) -> None:
+    """决定是否采集回滚数据：预估写入总量超阈值时跳过（控制 df_exec_rollback_log 体积）"""
+    limit = int(getattr(settings, "ROLLBACK_CAPTURE_MAX_ROWS", 200_000) or 200_000)
+    if ctx.iterate_driver is not None:
+        per_table = len(ctx.iterate_driver["drive_values"]) * ctx.iterate_driver["rows_per_value"]
+    else:
+        per_table = int(ctx.task.target_count or 0)
+    table_count = max(1, len(ctx.insert_order))
+    total = per_table * table_count
+    if total > limit:
+        ctx.capture_rollback = False
+        logger.info(
+            "rollback_capture_skipped", task_no=ctx.task_no,
+            estimated_rows=total, limit=limit,
+        )
 
 
 def execute_case_task(task_id: int) -> dict:
@@ -940,6 +1098,14 @@ def execute_case_task(task_id: int) -> dict:
         session.commit()
 
         try:
+            if ctx.is_redis_case:
+                # 纯 Redis 造数：顺序批次 + pipeline 原子写入
+                from app.engine import redis_gen  # 延迟导入避免循环依赖
+                _init_progress(ctx, per_table_target=int(ctx.task.target_count or 0))
+                stats_list = [redis_gen.execute_redis_case(ctx, session)]
+                final = _finalize_task(ctx, session, stats_list, False)
+                redis_gen.cleanup_incr_counters(ctx.task_id)
+                return _build_result(ctx, final)
             iterate_mode = ctx.iterate_driver is not None
             if iterate_mode:
                 stats_list = execute_iterate_mode(ctx, session)
@@ -1034,6 +1200,10 @@ def retry_failed_batches(task_id: int) -> dict:
             return {"task_id": task_id, "task_no": task.task_no, "status": "failed",
                     "status_code": TASK_STATUS_FAILED, "error": str(exc)[:500]}
 
+        if ctx.is_redis_case:
+            return {"task_id": task_id, "task_no": task.task_no, "status": "skipped",
+                    "error": "Redis 造数任务不支持断点重试，请使用回滚后重新执行"}
+
         # 按 (round_no, batch_no) 分组收集失败批次及失败表
         failed_logs = (
             session.query(ExecBatchLog)
@@ -1041,6 +1211,9 @@ def retry_failed_batches(task_id: int) -> dict:
             .order_by(ExecBatchLog.round_no, ExecBatchLog.batch_no)
             .all()
         )
+        # Redis 联动日志不参与断点重试（重跑生成的是新随机值，与已写入 MySQL 的数据不一致；
+        # 联动缺失数据请通过回滚后重新执行补齐）
+        failed_logs = [log for log in failed_logs if not log.table_name.startswith("redis:")]
         if not failed_logs:
             # 无失败批次：直接按现有日志重算终态
             task.status = TASK_STATUS_RUNNING

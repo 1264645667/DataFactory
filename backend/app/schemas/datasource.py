@@ -2,21 +2,40 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+def _is_redis(db_type: str) -> bool:
+    return (db_type or "").strip().lower() == "redis"
 
 
 class DatasourceCreateRequest(BaseModel):
-    """新增数据源。"""
+    """新增数据源（MySQL / Redis）。
+
+    Redis 约定：database_name 填 DB 索引（"0"~"15"），username 可空（ACL 用户），password 可空。
+    """
 
     name: str = Field(min_length=1, max_length=50, description="全局唯一，不含特殊字符")
-    db_type: str = Field(default="MySQL", description="一期仅支持 MySQL")
+    db_type: str = Field(default="MySQL", description="MySQL / Redis")
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=3306, ge=1, le=65535)
     database_name: str = Field(min_length=1, max_length=100)
-    username: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=1, max_length=128, description="明文，后端 AES-256 加密存储")
+    username: str = Field(default="", max_length=100)
+    password: str = Field(default="", max_length=128, description="明文，后端 AES-256 加密存储")
     group_type: int = Field(description="1=销项组 2=申报组")
     remark: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _check_by_type(self):
+        if _is_redis(self.db_type):
+            if not self.database_name.isdigit() or not 0 <= int(self.database_name) <= 15:
+                raise ValueError("Redis 数据源的 database_name 须为 DB 索引（0~15）")
+        else:
+            if not self.username:
+                raise ValueError("MySQL 数据源必须填写用户名")
+            if not self.password:
+                raise ValueError("MySQL 数据源必须填写密码")
+        return self
 
 
 class DatasourceUpdateRequest(BaseModel):
@@ -27,10 +46,19 @@ class DatasourceUpdateRequest(BaseModel):
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=3306, ge=1, le=65535)
     database_name: str = Field(min_length=1, max_length=100)
-    username: str = Field(min_length=1, max_length=100)
+    username: str = Field(default="", max_length=100)
     password: str | None = Field(default=None, max_length=128, description="留空表示不修改")
     group_type: int
     remark: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _check_by_type(self):
+        if _is_redis(self.db_type):
+            if not self.database_name.isdigit() or not 0 <= int(self.database_name) <= 15:
+                raise ValueError("Redis 数据源的 database_name 须为 DB 索引（0~15）")
+        elif not self.username:
+            raise ValueError("MySQL 数据源必须填写用户名")
+        return self
 
 
 class DatasourceTestRequest(BaseModel):
@@ -40,8 +68,8 @@ class DatasourceTestRequest(BaseModel):
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=3306, ge=1, le=65535)
     database_name: str = Field(min_length=1, max_length=100)
-    username: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=1, max_length=128)
+    username: str = Field(default="", max_length=100)
+    password: str = Field(default="", max_length=128)
 
 
 class DatasourceTestResponse(BaseModel):

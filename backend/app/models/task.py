@@ -45,6 +45,15 @@ class ExecTask(Base):
         comment="0=待执行 1=执行中 2=成功 3=失败 4=重试中 5=部分成功 6=已中止",
     )
     error_msg: Mapped[str | None] = mapped_column(Text, comment="失败时的错误摘要")
+    # ── 回滚状态扩展列 ──
+    rollback_status: Mapped[int] = mapped_column(
+        TINYINT,
+        nullable=False,
+        default=0,
+        comment="0=未回滚 1=回滚中 2=已回滚 3=回滚失败",
+    )
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime, comment="回滚完成时间")
+    rolled_back_by: Mapped[int | None] = mapped_column(BigInteger, comment="回滚操作人")
     start_at: Mapped[datetime | None] = mapped_column(DateTime)
     finish_at: Mapped[datetime | None] = mapped_column(DateTime)
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, comment="总耗时毫秒")
@@ -106,6 +115,58 @@ class ExecBatchLog(Base):
         Index("idx_task_round", "task_id", "round_no", "status"),
         {
             "comment": "执行批次日志（断点续传依据）",
+            "mysql_charset": "utf8mb4",
+            "mysql_engine": "InnoDB",
+        },
+    )
+
+
+class ExecRollbackLog(Base):
+    """执行回滚日志：按批次记录已写入数据的主键/Key，支撑一键回滚。
+
+    pk_payload JSON 结构：
+    - {"mode": "values", "pk": "id", "values": [...]}   MySQL 显式主键值
+    - {"mode": "range", "pk": "id", "start": n, "end": m}  MySQL 自增主键连续区间
+    - {"mode": "keys", "keys": [...]}                   Redis per_row 写入的 Key 列表
+    - {"mode": "del_key", "keys": [...]}                Redis 聚合 Key（回滚整体 DEL）
+    """
+
+    __tablename__ = "df_exec_rollback_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    target_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, comment="mysql / redis"
+    )
+    datasource_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, comment="写入目标所属数据源"
+    )
+    table_name: Mapped[str] = mapped_column(
+        String(200), nullable=False, comment="MySQL 表名 或 Redis Key模板标识"
+    )
+    batch_no: Mapped[int] = mapped_column(Integer, nullable=False, comment="批次序号")
+    round_no: Mapped[int | None] = mapped_column(
+        SmallInteger, comment="遍历模式轮次序号"
+    )
+    pk_column: Mapped[str | None] = mapped_column(
+        String(100), comment="MySQL 主键列名（Redis 目标为空）"
+    )
+    pk_payload: Mapped[str] = mapped_column(
+        MEDIUMTEXT, nullable=False, comment="回滚定位数据 JSON（见类 docstring）"
+    )
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, comment="本批写入条数")
+    rolled_back: Mapped[int] = mapped_column(
+        TINYINT, nullable=False, default=0, comment="0=未回滚 1=已回滚"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_task", "task_id"),
+        Index("idx_task_rolled", "task_id", "rolled_back"),
+        {
+            "comment": "执行回滚日志（一键回滚依据）",
             "mysql_charset": "utf8mb4",
             "mysql_engine": "InnoDB",
         },

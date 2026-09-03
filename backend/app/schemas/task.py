@@ -102,6 +102,11 @@ class TaskDetailResponse(BaseModel):
         description="0=待执行 1=执行中 2=成功 3=失败 4=重试中 5=部分成功 6=已中止"
     )
     error_msg: str | None = None
+    # ── 回滚状态 ──
+    rollback_status: int = Field(default=0, description="0=未回滚 1=回滚中 2=已回滚 3=回滚失败")
+    rolled_back_at: datetime | None = None
+    rollback_rows: int = Field(default=0, description="当前可回滚条数（未回滚的回滚日志累计）")
+    rollback_targets: list[str] = Field(default=[], description="可回滚目标列表（表名/Redis标识）")
     start_at: datetime | None = None
     finish_at: datetime | None = None
     duration_ms: int | None = None

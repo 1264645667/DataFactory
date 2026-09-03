@@ -9,6 +9,9 @@
       </n-button>
       <div class="action-bar-right">
         <n-button size="small" @click="assocDrawerShow = true">关联管理</n-button>
+        <n-button size="small" @click="openRedisSyncDrawer">
+          Redis 联动{{ redisSyncs.length ? `(${redisSyncs.length})` : '' }}
+        </n-button>
         <n-button v-if="hasPermission('ENGINE:CREATE')" size="small" @click="openSaveModal">
           {{ isEdit ? '保存修改' : '创建 Case' }}
         </n-button>
@@ -178,6 +181,12 @@
             <span class="assoc-source">{{ a.source_table || tableName }}.{{ a.source_column }}</span>
             <span class="dim">→</span>
             <span class="assoc-target">{{ a.target_table }}.{{ a.target_column }}</span>
+            <n-tag
+              v-if="tableDatasources[a.target_table]"
+              size="tiny"
+              type="warning"
+              class="assoc-ds-tag"
+            >{{ dsNameOf(tableDatasources[a.target_table]) }}</n-tag>
             <n-button text size="tiny" type="error" @click="removeAssocByIndex(i)">删除</n-button>
           </div>
           <EmptyState v-if="associations.length === 0" description="暂无关联配置" :size="70" />
@@ -209,12 +218,22 @@
                 :loading="sourceColumnsLoading"
               />
             </n-form-item>
+            <n-form-item label="目标表数据源（默认当前数据源，支持跨数据源关联）">
+              <n-select
+                v-model:value="assocForm.targetDatasourceId"
+                :options="mysqlDatasourceOptions"
+                filterable
+                placeholder="选择目标表所属数据源"
+                @update:value="onTargetDatasourceChange"
+              />
+            </n-form-item>
             <n-form-item label="目标表">
               <n-select
                 v-model:value="assocForm.targetTable"
                 :options="targetTableOptions"
                 filterable
                 placeholder="选择目标表"
+                :loading="targetTablesLoading"
                 @update:value="loadTargetColumns"
               />
             </n-form-item>
@@ -228,6 +247,90 @@
               />
             </n-form-item>
             <n-button class="gradient-btn" block size="small" :disabled="!assocForm.targetColumn" @click="addAssoc">
+              确认添加
+            </n-button>
+          </n-form>
+        </div>
+      </n-drawer-content>
+    </n-drawer>
+
+    <!-- Redis 联动抽屉：MySQL 造数成功后按模板同步写 Redis -->
+    <n-drawer v-model:show="redisSyncDrawerShow" :width="560" placement="right">
+      <n-drawer-content title="Redis 联动（造数同步写 Redis）" closable>
+        <p class="dim assoc-tip">
+          每个 MySQL 批次写入成功后，按模板把生成的字段值同步写入 Redis。
+          占位符：{表.字段} 引用生成值；{incr}/{incr:起始} 全局递增；{uuid}/{uuid:8}；{rand:6}；{i} 批内序号；{task_no}。
+        </p>
+        <!-- 已配置联动列表 -->
+        <div class="assoc-list">
+          <div v-for="(s, i) in redisSyncs" :key="i" class="assoc-item">
+            <div>
+              <span class="assoc-source">{{ s.name || s.key_template }}</span>
+              <n-tag size="tiny" type="warning" class="assoc-ds-tag">{{ dsNameOf(s.datasource_id) }}</n-tag>
+            </div>
+            <div class="dim redis-sync-desc">
+              {{ s.write_mode === 'per_row' ? '每行一个Key' : '聚合单Key' }} · {{ s.data_type }} ·
+              {{ s.key_template }}<template v-if="s.ttl_seconds"> · TTL {{ s.ttl_seconds }}s</template>
+            </div>
+            <n-button text size="tiny" type="error" @click="removeRedisSync(i)">删除</n-button>
+          </div>
+          <EmptyState v-if="redisSyncs.length === 0" description="暂无 Redis 联动配置" :size="70" />
+        </div>
+        <!-- 添加联动 -->
+        <div class="assoc-add">
+          <h4 class="assoc-add-title">添加联动</h4>
+          <n-form label-placement="top" size="small">
+            <n-form-item label="目标 Redis 数据源">
+              <n-select
+                v-model:value="syncForm.datasourceId"
+                :options="redisDatasourceOptions"
+                placeholder="选择 Redis 数据源"
+              />
+            </n-form-item>
+            <n-form-item label="备注名（可选，批次日志展示用）">
+              <n-input v-model:value="syncForm.name" placeholder="如：用户信息缓存" />
+            </n-form-item>
+            <div class="redis-form-row">
+              <n-form-item label="写入模式" class="redis-form-col">
+                <n-radio-group v-model:value="syncForm.writeMode" size="small">
+                  <n-radio-button value="per_row">每行一个Key</n-radio-button>
+                  <n-radio-button value="single_key">聚合单Key</n-radio-button>
+                </n-radio-group>
+              </n-form-item>
+              <n-form-item label="数据类型" class="redis-form-col">
+                <n-select
+                  v-model:value="syncForm.dataType"
+                  :options="redisDataTypeOptions"
+                />
+              </n-form-item>
+            </div>
+            <n-form-item label="Key 模板">
+              <n-input
+                v-model:value="syncForm.keyTemplate"
+                :placeholder="syncForm.writeMode === 'per_row' ? '如 user:{tax_change.id} 或 user:{incr}' : '如 case:{task_no}:users'"
+              />
+            </n-form-item>
+            <n-form-item label="参与字段（表.字段，可多选；不选=主表全部字段）">
+              <n-select
+                v-model:value="syncForm.fields"
+                :options="syncFieldOptions"
+                multiple
+                filterable
+                placeholder="选择参与 value 组装的字段"
+              />
+            </n-form-item>
+            <n-form-item label="value 模板（可选，覆盖默认组装；如 {&quot;name&quot;:&quot;{user.name}&quot;}）">
+              <n-input v-model:value="syncForm.valueTemplate" type="textarea" :rows="2" placeholder="留空按数据类型默认组装" />
+            </n-form-item>
+            <div class="redis-form-row">
+              <n-form-item v-if="syncForm.dataType === 'zset'" label="分数字段（表.字段）" class="redis-form-col">
+                <n-select v-model:value="syncForm.scoreField" :options="syncFieldOptions" filterable />
+              </n-form-item>
+              <n-form-item label="TTL（秒，0=不过期）" class="redis-form-col">
+                <n-input-number v-model:value="syncForm.ttlSeconds" :min="0" size="small" />
+              </n-form-item>
+            </div>
+            <n-button class="gradient-btn" block size="small" :disabled="!syncForm.datasourceId || !syncForm.keyTemplate" @click="addRedisSync">
               确认添加
             </n-button>
           </n-form>
@@ -272,6 +375,7 @@ import type {
   ColumnInfo,
   FieldStrategyConfig,
   IndexInfo,
+  RedisSyncConfig,
   StrategyCode,
   TableInfo,
 } from '@/api/types'
@@ -281,6 +385,7 @@ import AssocGraph from '@/components/business/AssocGraph.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
+import { useDatasourceStore } from '@/stores/datasource'
 import { formatNumber, formatDateTime } from '@/utils/formatter'
 import {
   columnTypeColor,
@@ -302,6 +407,7 @@ const route = useRoute()
 const router = useRouter()
 const { hasPermission } = useAuth()
 const { trackTask } = useTaskProgress()
+const dsStore = useDatasourceStore()
 
 const tableName = route.params.tableName as string
 const datasourceId = Number(route.query.datasource_id)
@@ -313,10 +419,36 @@ const tableInfo = ref<(TableInfo & { engine?: string; charset?: string }) | null
 const fieldRows = ref<FieldRow[]>([])
 const indexes = ref<IndexInfo[]>([])
 const associations = ref<Association[]>([])
+/** 跨数据源映射：{表名: 数据源ID}（仅非主数据源的关联表） */
+const tableDatasources = ref<Record<string, number>>({})
+/** Redis 联动配置列表 */
+const redisSyncs = ref<RedisSyncConfig[]>([])
 const outdatedFields = ref<string[]>([])
 const fieldKeyword = ref('')
 const dirty = ref(false)
 const existingCaseName = ref('')
+
+/** 表所属数据源（缺省为主数据源） */
+function dsOfTable(table: string): number {
+  return tableDatasources.value[table] ?? datasourceId
+}
+/** 数据源名称展示 */
+function dsNameOf(id: number | null | undefined): string {
+  if (id == null) return '-'
+  return dsStore.list.find((d) => d.id === id)?.name ?? `DS#${id}`
+}
+/** MySQL 数据源选项（关联目标表可选） */
+const mysqlDatasourceOptions = computed(() =>
+  dsStore.list
+    .filter((d) => (d.db_type || '').toLowerCase() !== 'redis')
+    .map((d) => ({ label: d.id === datasourceId ? `${d.name}（当前）` : d.name, value: d.id })),
+)
+/** Redis 数据源选项（联动目标） */
+const redisDatasourceOptions = computed(() =>
+  dsStore.list
+    .filter((d) => (d.db_type || '').toLowerCase() === 'redis')
+    .map((d) => ({ label: `${d.name}（db${d.database_name}）`, value: d.id })),
+)
 
 // ---------------- 关联表字段配置（related_field_configs） ----------------
 /** 当前展示的表（主表或某个关联表） */
@@ -352,7 +484,8 @@ function truncateName(name: string): string {
  * 表结构变更检测：已保存但缓存中不存在的字段记入 outdatedFields。
  */
 async function loadRelatedTableRows(table: string, savedConfigs?: FieldStrategyConfig[]): Promise<void> {
-  const res = await engineApi.columns(datasourceId, table)
+  // 跨数据源：按表所属数据源加载字段元数据
+  const res = await engineApi.columns(dsOfTable(table), table)
   const cfgMap = new Map((savedConfigs ?? []).map((f) => [f.column_name, f]))
   if (savedConfigs) {
     const existingNames = new Set(res.data.map((c) => c.column_name))
@@ -426,10 +559,17 @@ async function loadPage(): Promise<void> {
         }
       })
       associations.value = [...cfg.associations]
+      // 回显跨数据源映射与 Redis 联动（须先于关联表字段加载，保证列接口走正确的数据源）
+      tableDatasources.value = { ...(cfg.table_datasources ?? {}) }
+      redisSyncs.value = (cfg.redis_syncs ?? []).map((s) => ({ ...s, fields: [...(s.fields ?? [])] }))
       // 回显关联表字段策略（逐表加载字段元数据并应用已保存配置）
       const relatedOverrides = cfg.related_field_configs ?? {}
       for (const [table, savedConfigs] of Object.entries(relatedOverrides)) {
         await loadRelatedTableRows(table, savedConfigs)
+      }
+      // 跨数据源关联表无字段覆盖配置时，也需按正确数据源预加载（保证 Tab/联动字段选项可用）
+      for (const table of Object.keys(tableDatasources.value)) {
+        if (!relatedFieldRows.value[table]) await loadRelatedTableRows(table)
       }
       dirty.value = false
     }
@@ -516,12 +656,25 @@ function buildRelatedFieldConfigs(): Record<string, FieldStrategyConfig[]> {
 }
 
 function buildConfig(): CaseConfigJson {
+  // 仅保留非主数据源的映射（主表数据源由 Case 所属数据源决定）
+  const tableDs: Record<string, number> = {}
+  for (const [table, dsId] of Object.entries(tableDatasources.value)) {
+    if (dsId !== datasourceId) tableDs[table] = dsId
+  }
   return {
     version: '1.0',
+    case_type: 'mysql',
     main_table: tableName,
     field_configs: buildFieldConfigs(),
     associations: associations.value,
     related_field_configs: buildRelatedFieldConfigs(),
+    table_datasources: tableDs,
+    redis_syncs: redisSyncs.value.map((s) => ({
+      ...s,
+      name: s.name || null,
+      value_template: s.value_template || null,
+      score_field: s.score_field || null,
+    })),
   }
 }
 
@@ -539,10 +692,12 @@ const assocDrawerShow = ref(false)
 const assocForm = reactive({
   sourceTable: tableName as string, // 默认主表
   sourceColumn: null as string | null,
+  targetDatasourceId: datasourceId as number, // 目标表数据源（默认当前数据源）
   targetTable: null as string | null,
   targetColumn: null as string | null,
 })
 const targetTables = ref<TableInfo[]>([])
+const targetTablesLoading = ref(false)
 const targetColumns = ref<ColumnInfo[]>([])
 const sourceColumns = ref<ColumnInfo[]>([]) // 关联表作为源时的字段缓存
 const sourceColumnsLoading = ref(false)
@@ -573,7 +728,7 @@ const sourceColumnOptions = computed(() => {
     .map((c) => ({ label: `${c.column_name}（${c.column_type}）`, value: c.column_name }))
 })
 
-// 源表变化：切到关联表时需加载该表字段
+// 源表变化：切到关联表时需加载该表字段（跨数据源按表所属数据源）
 async function onSourceTableChange(table: string): Promise<void> {
   assocForm.sourceColumn = null
   if (!table || table === tableName) {
@@ -582,10 +737,32 @@ async function onSourceTableChange(table: string): Promise<void> {
   }
   sourceColumnsLoading.value = true
   try {
-    const res = await engineApi.columns(datasourceId, table)
+    const res = await engineApi.columns(dsOfTable(table), table)
     sourceColumns.value = res.data
   } finally {
     sourceColumnsLoading.value = false
+  }
+}
+
+/** 目标表数据源变化：重新加载该数据源的表列表 */
+async function onTargetDatasourceChange(dsId: number): Promise<void> {
+  assocForm.targetTable = null
+  assocForm.targetColumn = null
+  targetColumns.value = []
+  await loadTargetTables(dsId)
+}
+
+/** 加载指定数据源的表列表（排除主表） */
+async function loadTargetTables(dsId: number): Promise<void> {
+  targetTablesLoading.value = true
+  try {
+    const res = await engineApi.tables(dsId)
+    targetTables.value = res.data.filter((t) => t.table_name !== tableName)
+    if (dsId === datasourceId) {
+      tableInfo.value = res.data.find((t) => t.table_name === tableName) ?? null
+    }
+  } finally {
+    targetTablesLoading.value = false
   }
 }
 
@@ -626,6 +803,9 @@ function cleanupOrphanRelatedRows(): void {
   for (const t of Object.keys(relatedFieldRows.value)) {
     if (!alive.has(t)) delete relatedFieldRows.value[t]
   }
+  for (const t of Object.keys(tableDatasources.value)) {
+    if (!alive.has(t)) delete tableDatasources.value[t]
+  }
   if (activeTable.value !== tableName && !alive.has(activeTable.value)) {
     activeTable.value = tableName
   }
@@ -635,7 +815,7 @@ async function loadTargetColumns(): Promise<void> {
   assocForm.targetColumn = null
   targetColumns.value = []
   if (!assocForm.targetTable) return
-  const res = await engineApi.columns(datasourceId, assocForm.targetTable)
+  const res = await engineApi.columns(assocForm.targetDatasourceId, assocForm.targetTable)
   targetColumns.value = res.data
 }
 
@@ -670,6 +850,13 @@ function addAssoc(): void {
     window.$message.error('不允许表内自关联（源表与目标表相同）')
     return
   }
+  // 同名表跨数据源冲突校验：同名表在一个 Case 内只能属于一个数据源
+  const existingDs = tableDatasources.value[assocForm.targetTable]
+  const targetInScope = associations.value.some((a) => a.target_table === assocForm.targetTable)
+  if (targetInScope && (existingDs ?? datasourceId) !== assocForm.targetDatasourceId) {
+    window.$message.error(`表 ${assocForm.targetTable} 已关联自其他数据源，同名表在一个 Case 内只能属于一个数据源`)
+    return
+  }
   // 重复校验（含源表维度）
   const dup = associations.value.some(
     (a) =>
@@ -697,6 +884,10 @@ function addAssoc(): void {
     return
   }
   associations.value = next
+  // 跨数据源：记录目标表的数据源映射
+  if (assocForm.targetDatasourceId !== datasourceId) {
+    tableDatasources.value[assocForm.targetTable] = assocForm.targetDatasourceId
+  }
   dirty.value = true
   // 新关联的目标表若未加载字段配置，立即初始化（保证该表 Tab 可展示编辑）
   if (assocForm.targetTable && !relatedFieldRows.value[assocForm.targetTable]) {
@@ -705,6 +896,102 @@ function addAssoc(): void {
   assocForm.sourceColumn = null
   assocForm.targetColumn = null
   window.$message.success('关联已添加')
+}
+
+// ---------------- Redis 联动 ----------------
+const redisSyncDrawerShow = ref(false)
+const syncForm = reactive({
+  datasourceId: null as number | null,
+  name: '',
+  writeMode: 'per_row' as 'per_row' | 'single_key',
+  dataType: 'string' as RedisSyncConfig['data_type'],
+  keyTemplate: '',
+  fields: [] as string[],
+  valueTemplate: '',
+  scoreField: null as string | null,
+  ttlSeconds: 0,
+})
+
+const redisDataTypeOptions = computed(() => {
+  const all = [
+    { label: 'string（字符串）', value: 'string' },
+    { label: 'json（JSON 对象）', value: 'json' },
+    { label: 'hash（哈希）', value: 'hash' },
+    { label: 'list（列表，聚合）', value: 'list' },
+    { label: 'set（集合，聚合）', value: 'set' },
+    { label: 'zset（有序集合，聚合）', value: 'zset' },
+  ]
+  // per_row 模式不支持聚合类型
+  if (syncForm.writeMode === 'per_row') return all.filter((o) => !['list', 'set', 'zset'].includes(o.value))
+  return all
+})
+
+/** 联动字段选项：主表 + 已加载关联表的全部生成字段（排除 SKIP），格式 表.字段 */
+const syncFieldOptions = computed(() => {
+  const options: Array<{ label: string; value: string }> = []
+  for (const r of fieldRows.value) {
+    if (r.strategy === 'SKIP') continue
+    options.push({ label: `${tableName}.${r.column.column_name}（${r.column.column_type}）`, value: `${tableName}.${r.column.column_name}` })
+  }
+  for (const [table, rows] of Object.entries(relatedFieldRows.value)) {
+    for (const r of rows) {
+      if (r.strategy === 'SKIP') continue
+      options.push({ label: `${table}.${r.column.column_name}（${r.column.column_type}）`, value: `${table}.${r.column.column_name}` })
+    }
+  }
+  return options
+})
+
+/** 打开联动抽屉：确保全部关联表字段已加载（联动可选关联表字段） */
+async function openRedisSyncDrawer(): Promise<void> {
+  redisSyncDrawerShow.value = true
+  for (const table of relatedTables.value) {
+    if (!relatedFieldRows.value[table]) {
+      await loadRelatedTableRows(table)
+    }
+  }
+}
+
+function addRedisSync(): void {
+  if (!syncForm.datasourceId || !syncForm.keyTemplate.trim()) return
+  if (syncForm.writeMode === 'per_row' && ['list', 'set', 'zset'].includes(syncForm.dataType)) {
+    window.$message.error('每行一个Key 模式仅支持 string/json/hash，聚合类型请选聚合单Key')
+    return
+  }
+  if (syncForm.dataType === 'zset' && !syncForm.scoreField) {
+    window.$message.error('zset 类型必须选择分数字段')
+    return
+  }
+  if (syncForm.writeMode === 'single_key') {
+    const badToken = /\{([^{}]+)\}/.exec(syncForm.keyTemplate)?.[1]
+    if (badToken && badToken.trim() !== 'task_no') {
+      window.$message.error('聚合单Key 模式的 Key 模板仅支持 {task_no} 占位符（Key 须在任务内各批次保持稳定）')
+      return
+    }
+  }
+  redisSyncs.value.push({
+    name: syncForm.name.trim() || null,
+    datasource_id: syncForm.datasourceId,
+    key_template: syncForm.keyTemplate.trim(),
+    write_mode: syncForm.writeMode,
+    data_type: syncForm.dataType,
+    fields: [...syncForm.fields],
+    value_template: syncForm.valueTemplate.trim() || null,
+    score_field: syncForm.scoreField,
+    ttl_seconds: syncForm.ttlSeconds || 0,
+  })
+  dirty.value = true
+  syncForm.name = ''
+  syncForm.keyTemplate = ''
+  syncForm.fields = []
+  syncForm.valueTemplate = ''
+  syncForm.scoreField = null
+  window.$message.success('联动已添加')
+}
+
+function removeRedisSync(i: number): void {
+  redisSyncs.value.splice(i, 1)
+  dirty.value = true
 }
 
 // ---------------- 保存 / 执行 ----------------
@@ -823,6 +1110,8 @@ function handleReset(): void {
       })
       associations.value = []
       relatedFieldRows.value = {}
+      tableDatasources.value = {}
+      redisSyncs.value = []
       activeTable.value = tableName
       dirty.value = false
     },
@@ -845,12 +1134,14 @@ function handleBack(): void {
 }
 
 onMounted(async () => {
+  // 数据源列表（关联目标数据源 / Redis 联动目标选择）
+  if (!dsStore.list.length) {
+    dsStore.fetchList().catch(() => {})
+  }
   await loadPage()
   // 关联管理需要目标表列表；表基本信息改由表列表接口获取（columns 接口为纯数组）
   try {
-    const res = await engineApi.tables(datasourceId)
-    targetTables.value = res.data.filter((t) => t.table_name !== tableName)
-    tableInfo.value = res.data.find((t) => t.table_name === tableName) ?? null
+    await loadTargetTables(datasourceId)
   } catch {
     // 目标表列表加载失败不阻塞主流程
   }
@@ -987,6 +1278,22 @@ onMounted(async () => {
 }
 .assoc-item .dim {
   padding: 0 4px;
+}
+.assoc-ds-tag {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.redis-sync-desc {
+  margin-top: 2px;
+  word-break: break-all;
+}
+.redis-form-row {
+  display: flex;
+  gap: 12px;
+}
+.redis-form-col {
+  flex: 1;
+  min-width: 0;
 }
 .assoc-item :deep(.n-button) {
   position: absolute;

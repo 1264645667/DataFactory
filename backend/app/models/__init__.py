@@ -5,7 +5,7 @@ from app.models.case import Case
 from app.models.datasource import Datasource
 from app.models.notification import Notification
 from app.models.scene import Scene, SceneExec, SceneNodeExec
-from app.models.task import AuditLog, ExecBatchLog, ExecTask
+from app.models.task import AuditLog, ExecBatchLog, ExecRollbackLog, ExecTask
 from app.models.user import AiApiKey, Menu, User, UserMenu
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     "ColumnCache",
     "Datasource",
     "ExecBatchLog",
+    "ExecRollbackLog",
     "ExecTask",
     "IndexCache",
     "Menu",

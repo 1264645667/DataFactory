@@ -10,18 +10,20 @@ import time
 from datetime import datetime
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ensure_group_visible
 from app.celery_app import celery_app
 from app.core.redis_client import redis_client
-from app.models.task import ExecBatchLog, ExecTask
+from app.models.task import ExecBatchLog, ExecRollbackLog, ExecTask
 from app.models.user import User
 from app.schemas.errors import (
     FORBIDDEN,
     TASK_ALREADY_FINISHED,
     TASK_NOT_FOUND,
+    TASK_NOT_ROLLBACKABLE,
+    TASK_ROLLBACK_CONFLICT,
     BizException,
 )
 from app.schemas.task import (
@@ -55,6 +57,8 @@ _TASK_STATUS_STR = {
 _RUNNING_STATUS = (0, 1, 4)
 # 可重试状态（3=失败 5=部分成功）
 _RETRYABLE_STATUS = (3, 5)
+# 可回滚状态（2=成功 3=失败 5=部分成功：已落库数据均可回滚）
+_ROLLBACKABLE_STATUS = (2, 3, 5)
 
 
 def _decode(value) -> str:
@@ -301,6 +305,64 @@ async def retry_failed_batches(
     logger.info("task_retry_batches_submitted", task_no=task_no, operator=current_user.username, ip=ip)
 
 
+async def rollback_task(
+    db: AsyncSession, *, current_user: User, task_no: str, ip: str | None
+) -> dict:
+    """一键回滚：按 df_exec_rollback_log 删除本任务已写入的数据（MySQL 行 + Redis Key）。
+
+    仅终态任务（成功/失败/部分成功）可回滚；仅本人或管理员可操作。
+    回滚数据由执行器按批次采集（单列主键/自增区间/Redis Key），
+    大任务（预估写入量超 ROLLBACK_CAPTURE_MAX_ROWS）不采集、不可回滚。
+    """
+    task = await get_task_checked(db, current_user, task_no)
+    if task.created_by != current_user.id and current_user.group_type != 99:
+        raise BizException(FORBIDDEN, "无权回滚该任务")
+    if task.status not in _ROLLBACKABLE_STATUS:
+        raise BizException(
+            TASK_NOT_ROLLBACKABLE, f"任务状态为 {task.status}，仅成功/失败/部分成功的终态任务可回滚"
+        )
+    if (task.rollback_status or 0) == 1:
+        raise BizException(TASK_ROLLBACK_CONFLICT, "回滚正在进行中，请稍后")
+    if (task.rollback_status or 0) == 2:
+        raise BizException(TASK_ROLLBACK_CONFLICT, "任务已回滚，请勿重复操作")
+
+    # 可回滚数据检查（未回滚的回滚日志）
+    result = await db.execute(
+        select(func.count(), func.coalesce(func.sum(ExecRollbackLog.row_count), 0))
+        .select_from(ExecRollbackLog)
+        .where(ExecRollbackLog.task_id == task.id, ExecRollbackLog.rolled_back == 0)
+    )
+    log_count, row_count = result.one()
+    if not log_count:
+        raise BizException(
+            TASK_NOT_ROLLBACKABLE,
+            "无可回滚数据（任务未采集回滚信息：表缺少单列主键或规模超阈值）",
+        )
+
+    # 置回滚中并下发 Celery 回滚任务
+    task.rollback_status = 1
+    await db.commit()
+    try:
+        celery_app.send_task("tasks.rollback_exec_task", args=[task.id, current_user.id])
+    except Exception as e:
+        task.rollback_status = 0  # 提交失败恢复状态，允许重试
+        await db.commit()
+        logger.error("rollback_submit_failed", task_no=task_no)
+        from app.schemas.errors import CELERY_SUBMIT_FAILED
+        raise BizException(CELERY_SUBMIT_FAILED) from e
+
+    from app.services.notification_service import audit
+    await audit(
+        db, user_id=current_user.id, username=current_user.username, action="ROLLBACK_TASK",
+        resource="task", resource_id=task.task_no,
+        detail=f"回滚任务 {task_no}（约 {int(row_count)} 条）", ip=ip,
+    )
+    await db.commit()
+    logger.info("task_rollback_submitted", task_no=task_no, operator=current_user.username,
+                rows=int(row_count), ip=ip)
+    return {"task_no": task_no, "rollback_rows": int(row_count)}
+
+
 async def get_task_detail(
     db: AsyncSession, *, current_user: User, task_no: str
 ) -> TaskDetailResponse:
@@ -328,6 +390,26 @@ async def get_task_detail(
         )
         for log in result.scalars().all()
     ]
+    # 回滚状态与可回滚数据规模
+    rb_result = await db.execute(
+        select(
+            func.coalesce(func.sum(ExecRollbackLog.row_count), 0),
+            func.count(func.distinct(ExecRollbackLog.table_name)),
+        )
+        .select_from(ExecRollbackLog)
+        .where(ExecRollbackLog.task_id == task.id, ExecRollbackLog.rolled_back == 0)
+    )
+    rb_rows, _ = rb_result.one()
+    rb_targets_result = await db.execute(
+        select(ExecRollbackLog.target_type, ExecRollbackLog.table_name,
+               func.sum(ExecRollbackLog.row_count))
+        .where(ExecRollbackLog.task_id == task.id, ExecRollbackLog.rolled_back == 0)
+        .group_by(ExecRollbackLog.target_type, ExecRollbackLog.table_name)
+    )
+    rollback_targets = [
+        f"{'Redis' if t_type == 'redis' else 'MySQL'}:{tname}({int(rows)}条)"
+        for t_type, tname, rows in rb_targets_result.all()
+    ]
     return TaskDetailResponse(
         task_no=task.task_no,
         case_id=task.case_id,
@@ -342,6 +424,10 @@ async def get_task_detail(
         retry_count=task.retry_count,
         status=task.status,
         error_msg=task.error_msg,
+        rollback_status=task.rollback_status or 0,
+        rolled_back_at=task.rolled_back_at,
+        rollback_rows=int(rb_rows or 0),
+        rollback_targets=rollback_targets,
         start_at=task.start_at,
         finish_at=task.finish_at,
         duration_ms=task.duration_ms,

@@ -240,14 +240,56 @@ export interface Association {
   target_column: string
 }
 
+/** MySQL Case → Redis 联动同步配置 */
+export interface RedisSyncConfig {
+  /** 备注名（批次日志展示用） */
+  name?: string | null
+  /** 目标 Redis 数据源 ID */
+  datasource_id: number
+  /** Key 模板：支持 {表.字段} {i} {incr} {incr:起始} {uuid} {uuid:8} {rand:6} {ts} {task_no} */
+  key_template: string
+  /** per_row=每行一个Key / single_key=聚合到一个Key */
+  write_mode: 'per_row' | 'single_key'
+  /** string/json/hash/list/set/zset */
+  data_type: 'string' | 'json' | 'hash' | 'list' | 'set' | 'zset'
+  /** 参与 value 的字段（表.字段）；空=主表全部非 SKIP 字段 */
+  fields: string[]
+  /** 自定义 value 模板（可选） */
+  value_template?: string | null
+  /** zset 分数字段（表.字段） */
+  score_field?: string | null
+  /** Key 过期时间秒，0=不过期 */
+  ttl_seconds: number
+}
+
+/** 纯 Redis 造数配置（case_type=redis） */
+export interface RedisCaseConfig {
+  key_template: string
+  write_mode: 'per_row' | 'single_key'
+  data_type: 'string' | 'json' | 'hash' | 'list' | 'set' | 'zset'
+  /** value 字段生成策略（column_name 即字段名） */
+  field_configs: FieldStrategyConfig[]
+  value_template?: string | null
+  score_field?: string | null
+  ttl_seconds: number
+}
+
 /** Case config 完整结构 */
 export interface CaseConfigJson {
   version: string
+  /** mysql=关系库造数 / redis=Redis造数 */
+  case_type?: 'mysql' | 'redis'
   main_table: string
   field_configs: FieldStrategyConfig[]
   associations: Association[]
   /** 关联表字段策略覆盖：{表名: 字段配置数组}，缺省的关联表由执行器自动推断 */
   related_field_configs?: Record<string, FieldStrategyConfig[]>
+  /** 跨数据源关联：{表名: 数据源ID}，缺省为 Case 主数据源 */
+  table_datasources?: Record<string, number>
+  /** MySQL Case → Redis 联动同步 */
+  redis_syncs?: RedisSyncConfig[]
+  /** 纯 Redis 造数配置 */
+  redis_config?: RedisCaseConfig | null
 }
 
 /** 保存/执行 Case 请求体（后端要求 config 嵌套） */
@@ -455,6 +497,13 @@ export interface TaskDetailData {
   /** 完整状态码 0~6 */
   status: ExecStatusCode
   error_msg: string | null
+  /** 回滚状态：0未回滚 1回滚中 2已回滚 3回滚失败 */
+  rollback_status: 0 | 1 | 2 | 3
+  rolled_back_at: string | null
+  /** 当前可回滚条数 */
+  rollback_rows: number
+  /** 可回滚目标列表（含条数描述） */
+  rollback_targets: string[]
   start_at: string | null
   finish_at: string | null
   duration_ms: number | null

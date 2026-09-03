@@ -3,6 +3,7 @@
 GET  /{task_no}/progress       任务实时进度（前端每 2s 轮询）
 POST /{task_no}/abort          强制停止任务（仅本人或管理员）
 POST /{task_no}/retry-batches  重试失败批次（断点续传）
+POST /{task_no}/rollback       一键回滚（按回滚日志删除已写入数据）
 GET  /{task_no}/detail         任务详情（含分批次日志）
 """
 
@@ -66,3 +67,14 @@ async def get_detail(
 ) -> ApiResponse[TaskDetailResponse]:
     data = await task_service.get_task_detail(db, current_user=current_user, task_no=task_no)
     return ApiResponse(data=data)
+
+
+@router.post("/{task_no}/rollback", summary="一键回滚任务已写入数据")
+async def rollback(
+    task_no: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    data = await task_service.rollback_task(db, current_user=current_user, task_no=task_no, ip=_ip(request))
+    return ApiResponse(data=data, message="回滚任务已提交，完成后将收到通知")

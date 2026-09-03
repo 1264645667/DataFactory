@@ -215,7 +215,14 @@ const columns: DataTableColumns<CaseItem> = [
         btns.push(
           h(
             NButton,
-            { text: true, size: 'small', onClick: () => router.push({ name: 'EngineConfig', params: { tableName: row.main_table }, query: { datasource_id: row.datasource_id, case_id: row.id } }) },
+            { text: true, size: 'small', onClick: () => {
+              // Redis 造数 Case（main_table 为 redis: 前缀展示名）走 Redis 配置页
+              if (row.main_table?.startsWith('redis:')) {
+                router.push({ name: 'RedisConfig', query: { datasource_id: row.datasource_id, case_id: row.id } })
+              } else {
+                router.push({ name: 'EngineConfig', params: { tableName: row.main_table }, query: { datasource_id: row.datasource_id, case_id: row.id } })
+              }
+            } },
             () => '修改',
           ),
         )

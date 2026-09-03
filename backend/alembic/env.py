@@ -21,7 +21,8 @@ from app import models  # noqa: E402,F401  # 确保全部模型被导入注册�
 config = context.config
 
 # 注入数据库连接串（同步 pymysql）
-config.set_main_option("sqlalchemy.url", settings.SYNC_DATABASE_URL)
+# 注意：configparser 对 % 做插值解析，URL 中的 %（密码转义字符）须转义为 %%
+config.set_main_option("sqlalchemy.url", settings.SYNC_DATABASE_URL.replace("%", "%%"))
 
 # 读取 alembic.ini 中的日志配置
 if config.config_file_name is not None:

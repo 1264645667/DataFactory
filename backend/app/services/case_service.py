@@ -31,6 +31,7 @@ from app.schemas.errors import (
 from app.schemas.response import PageData
 from app.services.engine_service import (
     MAX_TARGET_COUNT,
+    _apply_redis_case_display,
     _check_case_name_unique,
     create_exec_task,
     submit_exec_task,
@@ -159,23 +160,28 @@ async def _detect_schema_outdated(
 ) -> list[str]:
     """表结构变更检测返回已失效（缓存中不存在）的字段名列表。
 
-    检测范围：主表配置字段 + 关联目标字段。
+    检测范围：主表配置字段 + 关联目标字段。跨数据源按 table_datasources 解析表所属数据源。
     """
     from app.services.engine_service import _get_column_type_map
 
+    table_ds = dict(new_config.table_datasources or {})
+
+    def _ds_of(table: str) -> int:
+        return table_ds.get(table, case.datasource_id)
+
     outdated: list[str] = []
-    main_columns = await _get_column_type_map(db, case.datasource_id, new_config.main_table)
+    main_columns = await _get_column_type_map(db, _ds_of(new_config.main_table), new_config.main_table)
     if main_columns:
         for fc in new_config.field_configs:
             if fc.column_name not in main_columns:
                 outdated.append(f"{new_config.main_table}.{fc.column_name}")
     for assoc in new_config.associations or []:
-        target_columns = await _get_column_type_map(db, case.datasource_id, assoc.target_table)
+        target_columns = await _get_column_type_map(db, _ds_of(assoc.target_table), assoc.target_table)
         if target_columns and assoc.target_column not in target_columns:
             outdated.append(f"{assoc.target_table}.{assoc.target_column}")
     # 关联表字段策略覆盖中的字段同样做失效检测
     for table, related_configs in (new_config.related_field_configs or {}).items():
-        related_columns = await _get_column_type_map(db, case.datasource_id, table)
+        related_columns = await _get_column_type_map(db, _ds_of(table), table)
         if related_columns:
             for fc in related_configs:
                 if fc.column_name not in related_columns:
@@ -197,10 +203,13 @@ async def update_case(
     检测到表结构变更时 outdated_fields 非空（提示「以下字段配置可能失效」），保存仍生效。
     """
     case = await get_case_checked(db, current_user, case_id)
-    await validate_case_config(db, case.datasource_id, req.config)
+    await validate_case_config(db, case.datasource_id, req.config, current_user)
     await _check_case_name_unique(db, case.datasource_id, req.case_name, exclude_id=case.id)
 
-    outdated_fields = await _detect_schema_outdated(db, case, req.config)
+    outdated_fields: list[str] = []
+    if (req.config.case_type or "mysql") != "redis":
+        outdated_fields = await _detect_schema_outdated(db, case, req.config)
+    _apply_redis_case_display(req.config)
 
     related_tables, related_count = [], 0
     for assoc in req.config.associations or []:

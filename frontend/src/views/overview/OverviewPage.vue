@@ -152,6 +152,30 @@
               </div>
             </n-alert>
 
+            <!-- 回滚状态与操作（终态任务且已采集回滚数据时可用） -->
+            <div v-if="[2, 3, 5].includes(detail.status)" class="rollback-bar">
+              <template v-if="detail.rollback_status === 2">
+                <n-tag size="small" type="info">已回滚</n-tag>
+                <span class="dim">{{ detail.rolled_back_at ? `回滚于 ${formatDateTime(detail.rolled_back_at)}` : '' }}</span>
+              </template>
+              <template v-else-if="detail.rollback_status === 1">
+                <n-tag size="small" type="warning">回滚中…</n-tag>
+                <n-button size="tiny" @click="openDetail(detail.task_no)">刷新状态</n-button>
+              </template>
+              <template v-else>
+                <n-button
+                  v-if="detail.rollback_rows > 0"
+                  size="small"
+                  type="error"
+                  ghost
+                  :loading="rollbackSubmitting"
+                  @click="handleRollback"
+                >一键回滚（约 {{ formatNumber(detail.rollback_rows) }} 条）</n-button>
+                <span v-else class="dim">未采集回滚数据（无主键表或超规模阈值），不支持回滚</span>
+                <n-tag v-if="detail.rollback_status === 3" size="small" type="error">上次回滚部分失败，可重试</n-tag>
+              </template>
+            </div>
+
             <!-- 分批次日志 -->
             <h4 class="section-title">分批次日志</h4>
             <n-data-table
@@ -578,6 +602,31 @@ async function retryTask(taskNo: string): Promise<void> {
   trackTask(taskNo, '')
 }
 
+// ---------------- 一键回滚 ----------------
+const rollbackSubmitting = ref(false)
+
+/** 一键回滚：删除本任务已写入的 MySQL 行与 Redis Key（二次确认） */
+function handleRollback(): void {
+  if (!detail.value) return
+  const d = detail.value
+  window.$dialog.warning({
+    title: '确认回滚',
+    content: `将删除任务 ${d.task_no} 写入的约 ${formatNumber(d.rollback_rows)} 条数据（${d.rollback_targets.join('、') || '-'}）。此操作不可恢复，是否继续？`,
+    positiveText: '确认回滚',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      rollbackSubmitting.value = true
+      try {
+        await tasksApi.rollback(d.task_no)
+        window.$message.success('回滚任务已提交，完成后将收到通知')
+        await openDetail(d.task_no)
+      } finally {
+        rollbackSubmitting.value = false
+      }
+    },
+  })
+}
+
 // ---------------- 初始化 ----------------
 onMounted(async () => {
   // 默认时间范围：近 7 天
@@ -711,5 +760,15 @@ onMounted(async () => {
   align-items: flex-start;
   gap: 8px;
   word-break: break-all;
+}
+.rollback-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.rollback-bar .dim {
+  color: #64748b;
+  font-size: 12px;
 }
 </style>

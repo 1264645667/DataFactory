@@ -6,7 +6,15 @@
         <n-input v-model:value="form.name" placeholder="1~50 字，全局唯一" />
       </n-form-item>
       <n-form-item label="数据库类型" path="db_type">
-        <n-select v-model:value="form.db_type" :options="[{ label: 'MySQL', value: 'MySQL' }]" disabled />
+        <n-select
+          v-model:value="form.db_type"
+          :options="[
+            { label: 'MySQL', value: 'MySQL' },
+            { label: 'Redis', value: 'Redis' },
+          ]"
+          :disabled="isEdit"
+          @update:value="onDbTypeChange"
+        />
       </n-form-item>
       <n-form-item label="Host" path="host">
         <n-input v-model:value="form.host" placeholder="合法 IP 或域名" />
@@ -14,18 +22,24 @@
       <n-form-item label="Port" path="port">
         <n-input-number v-model:value="form.port" :min="1" :max="65535" style="width: 160px" />
       </n-form-item>
-      <n-form-item label="Database" path="database_name">
-        <n-input v-model:value="form.database_name" placeholder="数据库名" />
+      <n-form-item :label="isRedis ? 'DB 索引' : 'Database'" path="database_name">
+        <n-input
+          v-model:value="form.database_name"
+          :placeholder="isRedis ? 'Redis DB 索引（0~15）' : '数据库名'"
+        />
       </n-form-item>
-      <n-form-item label="用户名" path="username">
-        <n-input v-model:value="form.username" placeholder="数据库用户名" />
+      <n-form-item :label="'用户名'" path="username">
+        <n-input
+          v-model:value="form.username"
+          :placeholder="isRedis ? 'ACL 用户名（可空）' : '数据库用户名'"
+        />
       </n-form-item>
       <n-form-item label="密码" path="password">
         <n-input
           v-model:value="form.password"
           type="password"
           show-password-on="click"
-          :placeholder="isEdit ? '不填则保持原密码' : '数据库密码'"
+          :placeholder="isEdit ? '不填则保持原密码' : isRedis ? 'Redis 密码（可空）' : '数据库密码'"
         />
       </n-form-item>
       <n-form-item label="所属分组" path="group_type">
@@ -86,6 +100,13 @@ const saving = ref(false)
 const testResult = ref<{ ok: boolean; text: string } | null>(null)
 
 const isEdit = computed(() => !!props.datasource)
+const isRedis = computed(() => (form.db_type || '').toLowerCase() === 'redis')
+
+/** 类型切换：调整默认端口与冗余字段 */
+function onDbTypeChange(v: string): void {
+  form.port = v.toLowerCase() === 'redis' ? 6379 : 3306
+  if (v.toLowerCase() === 'redis' && !form.database_name) form.database_name = '0'
+}
 
 const form = reactive<DatasourceForm>({
   name: '',
@@ -99,7 +120,8 @@ const form = reactive<DatasourceForm>({
   remark: '',
 })
 
-const rules: FormRules = {
+// 校验规则按类型动态调整：Redis 用户名/密码可空，database_name 为 DB 索引
+const rules = computed<FormRules>(() => ({
   name: [
     { required: true, message: '请输入数据源名称', trigger: ['input', 'blur'] },
     { pattern: /^[a-zA-Z0-9_一-龥-]{1,50}$/, message: '1~50 字，不含特殊字符', trigger: ['input', 'blur'] },
@@ -113,17 +135,24 @@ const rules: FormRules = {
     },
   ],
   port: [{ required: true, type: 'number', message: '请输入端口', trigger: ['input', 'blur'] }],
-  database_name: [{ required: true, message: '请输入数据库名', trigger: ['input', 'blur'] }],
-  username: [{ required: true, message: '请输入用户名', trigger: ['input', 'blur'] }],
+  database_name: [
+    { required: true, message: isRedis.value ? '请输入 DB 索引' : '请输入数据库名', trigger: ['input', 'blur'] },
+    ...(isRedis.value
+      ? [{ pattern: /^([0-9]|1[0-5])$/, message: 'DB 索引须为 0~15', trigger: ['input', 'blur'] }]
+      : []),
+  ],
+  username: isRedis.value
+    ? []
+    : [{ required: true, message: '请输入用户名', trigger: ['input', 'blur'] }],
   password: [
     {
-      validator: (_r, v) => isEdit.value || (v != null && v !== ''),
+      validator: (_r, v) => isRedis.value || isEdit.value || (v != null && v !== ''),
       message: '请输入密码',
       trigger: ['input', 'blur'],
     },
   ],
   group_type: [{ required: true, type: 'number', message: '请选择所属分组', trigger: ['change'] }],
-}
+}))
 
 // 打开弹窗时回显 / 重置表单
 watch(
@@ -206,7 +235,9 @@ async function handleSave(): Promise<void> {
       const res = await datasourceApi.create({ ...form })
       id = res.data.id
     }
-    window.$message.success('数据源已保存，正在后台初始化表结构，预计需要 10~60 秒…')
+    window.$message.success(
+      isRedis.value ? 'Redis 数据源已保存' : '数据源已保存，正在后台初始化表结构，预计需要 10~60 秒…',
+    )
     close()
     emit('saved', { id, isEdit: isEdit.value })
   } finally {

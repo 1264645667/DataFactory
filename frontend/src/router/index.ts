@@ -39,6 +39,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '字段配置', permission: 'ENGINE:VIEW', parent: '/engine' },
       },
       {
+        path: 'engine/redis-config',
+        name: 'RedisConfig',
+        component: () => import('@/views/engine/RedisConfig.vue'),
+        meta: { title: 'Redis 造数配置', permission: 'ENGINE:VIEW', parent: '/engine' },
+      },
+      {
         path: 'cases',
         name: 'Cases',
         component: () => import('@/views/cases/CaseList.vue'),

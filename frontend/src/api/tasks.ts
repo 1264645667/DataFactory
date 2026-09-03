@@ -19,4 +19,10 @@ export const tasksApi = {
   detail(taskNo: string) {
     return request.get<unknown, ApiResponse<TaskDetailData>>(`/v1/tasks/${taskNo}/detail`)
   },
+  /** 一键回滚（删除任务已写入的 MySQL 行与 Redis Key） */
+  rollback(taskNo: string) {
+    return request.post<unknown, ApiResponse<{ task_no: string; rollback_rows: number }>>(
+      `/v1/tasks/${taskNo}/rollback`,
+    )
+  },
 }

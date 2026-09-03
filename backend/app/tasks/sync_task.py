@@ -346,6 +346,24 @@ def _do_sync(datasource_id: int) -> dict:
         log = logger.bind(datasource_id=datasource_id, datasource=ds.name)
         log.info("sync_datasource_start")
 
+        # Redis 数据源：无表结构可同步，PING 探活即视为正常
+        if (ds.db_type or "").strip().lower() == "redis":
+            try:
+                from app.engine.redis_pool import get_sync_redis
+
+                get_sync_redis(datasource_id).ping()
+                ds.status = DS_STATUS_NORMAL
+                ds.last_sync_at = datetime.now()
+                ds.table_count = 0
+                session.commit()
+                log.info("redis_datasource_ready")
+                return {"datasource_id": datasource_id, "status": "success", "table_count": 0}
+            except Exception as exc:  # noqa: BLE001
+                log.exception("redis_datasource_ping_failed")
+                ds.status = DS_STATUS_ERROR
+                session.commit()
+                return {"datasource_id": datasource_id, "status": "failed", "error": str(exc)[:500]}
+
         try:
             engine = get_sync_engine(datasource_id)
             table_rows, columns_by_table, indexes_by_table = _collect_metadata(engine, ds.database_name)
@@ -438,8 +456,20 @@ def scheduled_sync_all(self) -> dict:
 # 心跳检测
 
 def _ping_datasource(datasource_id: int) -> bool:
-    """对目标数据源执行轻量 SELECT 1 探活"""
+    """对目标数据源执行轻量探活（MySQL：SELECT 1；Redis：PING）"""
+    session = SyncSessionLocal()
     try:
+        ds = session.get(Datasource, datasource_id)
+        if ds is None:
+            return False
+        db_type = (ds.db_type or "").strip().lower()
+    finally:
+        session.close()
+    try:
+        if db_type == "redis":
+            from app.engine.redis_pool import get_sync_redis
+
+            return bool(get_sync_redis(datasource_id).ping())
         engine = get_sync_engine(datasource_id)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -492,6 +522,12 @@ def heartbeat_check(self) -> dict:
                 if notified:
                     # 丢弃失效连接池，避免后续任务排队等待超时
                     remove_sync_engine(ds.id)
+                    try:
+                        from app.engine.redis_pool import remove_sync_redis
+
+                        remove_sync_redis(ds.id)
+                    except Exception:  # noqa: BLE001
+                        pass
                     session = SyncSessionLocal()
                     try:
                         _notify_group(

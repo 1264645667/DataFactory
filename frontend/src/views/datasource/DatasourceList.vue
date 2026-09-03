@@ -101,6 +101,18 @@ const columns: DataTableColumns<Datasource> = [
         r.is_default ? h('span', { style: 'color:#fbbf24;margin-left:6px', title: '默认数据源' }, '★') : null,
       ]),
   },
+  // 类型标识：MySQL / Redis（Redis 的连接地址末段为 DB 索引）
+  {
+    title: '类型',
+    key: 'db_type',
+    width: 80,
+    render: (r) =>
+      h(
+        NTag,
+        { size: 'small', type: (r.db_type || '').toLowerCase() === 'redis' ? 'warning' : 'info' },
+        () => ((r.db_type || '').toLowerCase() === 'redis' ? 'Redis' : 'MySQL'),
+      ),
+  },
   { title: '连接地址', key: 'host', render: (r) => `${r.host}:${r.port}/${r.database_name}` },
   { title: '所属分组', key: 'group_type', width: 100, render: (r) => groupName(r.group_type) },
   { title: '连接状态', key: 'online', width: 100, render: (r) => statusLight(r.online) },

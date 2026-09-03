@@ -57,18 +57,19 @@ RUNNING_TASK_STATUS = (0, 1, 4)
 
 
 def _remove_sync_engine_safe(datasource_id: int) -> None:
-    """移除 Worker 侧同步连接池（防御性延迟导入）。
-
-    说明：app/engine/db_pool.py 当前存在导入问题（from app.core.security import
-    aes_decrypt，而 security 模块实际导出 decrypt_aes），此处延迟导入并容错，
-    待该模块修复后自动生效。
-    """
+    """移除 Worker 侧同步连接池（MySQL Engine + Redis 客户端，防御性延迟导入）。"""
     try:
         from app.engine.db_pool import remove_sync_engine
 
         remove_sync_engine(datasource_id)
     except Exception:
         logger.warning("remove_sync_engine_failed", datasource_id=datasource_id)
+    try:
+        from app.engine.redis_pool import remove_sync_redis
+
+        remove_sync_redis(datasource_id)
+    except Exception:
+        logger.warning("remove_sync_redis_failed", datasource_id=datasource_id)
 
 
 async def get_datasource_or_404(db: AsyncSession, datasource_id: int) -> Datasource:
@@ -358,7 +359,9 @@ async def delete_datasource(
 
 
 async def test_connection(req: DatasourceTestRequest) -> DatasourceTestResponse:
-    """测试连接（表单页按钮，不保存）：临时引擎 SELECT VERSION() 后立即释放。"""
+    """测试连接（表单页按钮，不保存）。MySQL：SELECT VERSION()；Redis：PING。"""
+    if (req.db_type or "").strip().lower() == "redis":
+        return await _test_redis_connection(req)
     engine = create_async_engine(
         f"mysql+aiomysql://{quote_plus(req.username)}:{quote_plus(req.password)}"
         f"@{req.host}:{req.port}/{req.database_name}",
@@ -382,6 +385,39 @@ async def test_connection(req: DatasourceTestRequest) -> DatasourceTestResponse:
         return DatasourceTestResponse(success=False, message=f"连接失败：{str(e)[:300]}")
     finally:
         await engine.dispose()
+
+
+async def _test_redis_connection(req: DatasourceTestRequest) -> DatasourceTestResponse:
+    """Redis 数据源测试连接：PING + INFO server 取版本。"""
+    import redis.asyncio as aioredis
+
+    try:
+        db_index = int(req.database_name or 0)
+    except ValueError:
+        return DatasourceTestResponse(success=False, message="连接失败：DB 索引须为 0~15 的整数")
+    client = aioredis.Redis(
+        host=req.host, port=req.port, db=db_index,
+        username=req.username or None, password=req.password or None,
+        socket_connect_timeout=5, socket_timeout=5, decode_responses=True,
+    )
+    start = time.perf_counter()
+    try:
+        await client.ping()
+        info = await client.info(section="server")
+        version = info.get("redis_version", "unknown")
+        dbsize = await client.dbsize()
+        latency = round((time.perf_counter() - start) * 1000, 1)
+        logger.info("redis_test_success", host=req.host, port=req.port, db=db_index, latency_ms=latency)
+        return DatasourceTestResponse(
+            success=True,
+            message=f"连接成功，Redis {version}（db{db_index} 现有 {dbsize} 个 Key）",
+            db_version=str(version),
+        )
+    except Exception as e:
+        logger.warning("redis_test_failed", host=req.host, port=req.port, error=str(e))
+        return DatasourceTestResponse(success=False, message=f"连接失败：{str(e)[:300]}")
+    finally:
+        await client.aclose()
 
 
 async def trigger_sync(

@@ -11,6 +11,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import ensure_group_visible
 from app.celery_app import celery_app
 from app.core.redis_client import redis_client
 from app.engine.dep_analyzer import build_insert_order
@@ -392,12 +393,36 @@ async def _get_column_type_map(db: AsyncSession, datasource_id: int, table_name:
     return {name: (dt or "") for name, dt in result.all()}
 
 
-async def validate_case_config(db: AsyncSession, datasource_id: int, config: CaseConfig) -> None:
+async def validate_case_config(
+    db: AsyncSession, datasource_id: int, config: CaseConfig, current_user: User | None = None
+) -> None:
     """Case 配置完整校验（保存/执行前调用）。
 
     校验项：主表存在（1300）→ ITERATE_LIST 全校唯一（1303）→ 策略参数（1304）→
     关联目标表存在（1300）→ 类型兼容（1301）→ 循环关联（1302）→ 关联源字段合法（1403）。
+    扩展：case_type=redis 走纯 Redis 造数校验；table_datasources 声明跨数据源关联；
+    redis_syncs 配置 MySQL → Redis 联动。
     """
+    # ── 纯 Redis 造数 Case：独立校验路径 ──
+    if (config.case_type or "mysql") == "redis":
+        await _validate_redis_case(db, datasource_id, config, current_user)
+        return
+
+    if not config.main_table:
+        raise BizException(CASE_CONFIG_INVALID, "Case 配置缺少主表(main_table)")
+
+    # 跨数据源表→数据源映射校验 + 解析器
+    table_ds = dict(config.table_datasources or {})
+    ds_cache: dict[int, str] = {}  # ds_id → db_type
+
+    async def _ds_type_of(ds_id: int) -> str:
+        if ds_id not in ds_cache:
+            ds = await get_datasource_or_404(db, ds_id)
+            if current_user is not None:
+                ensure_group_visible(current_user, ds.group_type, DS_NOT_FOUND)
+            ds_cache[ds_id] = (ds.db_type or "").strip().lower()
+        return ds_cache[ds_id]
+
     # 1. 主表必须已同步
     main_columns = await _get_column_type_map(db, datasource_id, config.main_table)
     if not main_columns:
@@ -433,7 +458,7 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
 
     # 4. 关联配置校验（支持多级：源表可以是主表或任一已关联的表，形成 A→B→C 链式）
     associations = config.associations or []
-    # 表字段类型缓存（source/target 共用）
+    # 表字段类型缓存（source/target 共用，按 表@数据源 缓存）
     column_type_cache: dict[str, dict[str, str]] = {}
     configured_columns = {fc.column_name for fc in field_configs}
     skip_columns = {
@@ -444,10 +469,25 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
     for assoc in associations:
         scope_tables.add(assoc.target_table)
 
+    # 跨数据源声明合法性：仅造数范围内的关联表可声明，且目标必须是 MySQL 数据源
+    for table, ds_id in table_ds.items():
+        if table == config.main_table:
+            raise BizException(CASE_CONFIG_INVALID, "主表数据源由 Case 所属数据源决定，无需在 table_datasources 声明")
+        if table not in scope_tables:
+            raise BizException(
+                CASE_CONFIG_INVALID, f"table_datasources 中的表 {table} 未纳入本 Case 造数范围"
+            )
+        if await _ds_type_of(ds_id) != "mysql":
+            raise BizException(CASE_CONFIG_INVALID, f"关联表 {table} 的数据源 {ds_id} 不是 MySQL 类型")
+
+    def _ds_of(table: str) -> int:
+        return table_ds.get(table, datasource_id)
+
     async def _columns_of(table: str) -> dict[str, str]:
-        if table not in column_type_cache:
-            column_type_cache[table] = await _get_column_type_map(db, datasource_id, table)
-        return column_type_cache[table]
+        cache_key = f"{table}@{_ds_of(table)}"
+        if cache_key not in column_type_cache:
+            column_type_cache[cache_key] = await _get_column_type_map(db, _ds_of(table), table)
+        return column_type_cache[cache_key]
 
     for assoc in associations:
         target_table = assoc.target_table
@@ -526,6 +566,132 @@ async def validate_case_config(db: AsyncSession, datasource_id: int, config: Cas
                 )
             _validate_field_strategy(fc, table)
 
+    # 7. Redis 联动配置校验（目标须为 Redis 数据源；字段引用须在造数范围内）
+    if config.redis_syncs:
+        await _validate_redis_syncs(db, config, scope_tables, current_user, _ds_type_of, _columns_of)
+
+
+async def _validate_redis_syncs(
+    db: AsyncSession,
+    config: CaseConfig,
+    scope_tables: set[str],
+    current_user: User | None,
+    ds_type_of,
+    columns_of,
+) -> None:
+    """Redis 联动配置校验：数据源类型 / 写入模式 / 字段引用 / 模板占位符。"""
+    from app.engine.redis_gen import validate_single_key_template, validate_template
+
+    for index, sync in enumerate(config.redis_syncs):
+        label = sync.name or sync.key_template or f"#{index + 1}"
+        if await ds_type_of(sync.datasource_id) != "redis":
+            raise BizException(
+                CASE_CONFIG_INVALID, f"Redis 联动[{label}]目标数据源不是 Redis 类型"
+            )
+        if sync.write_mode not in ("per_row", "single_key"):
+            raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]写入模式仅支持 per_row/single_key")
+        if sync.data_type not in ("string", "json", "hash", "list", "set", "zset"):
+            raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]数据类型非法: {sync.data_type}")
+        if sync.write_mode == "per_row" and sync.data_type in ("list", "set", "zset"):
+            raise BizException(
+                CASE_CONFIG_INVALID,
+                f"Redis 联动[{label}]per_row 模式仅支持 string/json/hash，聚合类型请用 single_key",
+            )
+        if sync.write_mode == "single_key":
+            # 聚合 Key 须在任务内跨批次稳定：仅允许字面量与 {task_no}
+            try:
+                validate_single_key_template(sync.key_template)
+            except ValueError as e:
+                raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]{e}") from e
+
+        # 字段引用校验：table.column 格式且表在造数范围内、字段存在
+        allowed_refs: set[str] = set()
+        for table in scope_tables:
+            for column in (await columns_of(table)).keys():
+                allowed_refs.add(f"{table}.{column}")
+        for ref in sync.fields or []:
+            if "." not in ref:
+                raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]字段须为 表.字段 格式: {ref}")
+            table = ref.rsplit(".", 1)[0]
+            if table not in scope_tables:
+                raise BizException(
+                    CASE_CONFIG_INVALID, f"Redis 联动[{label}]字段 {ref} 的表未纳入本 Case 造数范围"
+                )
+            if ref not in allowed_refs:
+                raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]字段不存在: {ref}")
+        if sync.data_type == "zset":
+            if sync.score_field and sync.score_field not in allowed_refs:
+                raise BizException(
+                    CASE_CONFIG_INVALID, f"Redis 联动[{label}]分数字段不存在: {sync.score_field}"
+                )
+        # 模板占位符静态校验
+        try:
+            validate_template(sync.key_template, allowed_refs, allow_row_fields=True)
+            if sync.value_template:
+                validate_template(sync.value_template, allowed_refs, allow_row_fields=True)
+        except ValueError as e:
+            raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]模板非法：{e}") from e
+
+
+async def _validate_redis_case(
+    db: AsyncSession, datasource_id: int, config: CaseConfig, current_user: User | None
+) -> None:
+    """纯 Redis 造数 Case 校验：数据源类型 / key 模板 / value 字段策略。"""
+    from app.engine.redis_gen import validate_single_key_template, validate_template
+
+    ds = await get_datasource_or_404(db, datasource_id)
+    if current_user is not None:
+        ensure_group_visible(current_user, ds.group_type, DS_NOT_FOUND)
+    if (ds.db_type or "").strip().lower() != "redis":
+        raise BizException(CASE_CONFIG_INVALID, "Redis 造数 Case 必须选择 Redis 类型数据源")
+
+    redis_cfg = config.redis_config
+    if redis_cfg is None or not redis_cfg.key_template:
+        raise BizException(CASE_CONFIG_INVALID, "Redis 造数配置缺少 key_template")
+    if redis_cfg.write_mode not in ("per_row", "single_key"):
+        raise BizException(CASE_CONFIG_INVALID, "写入模式仅支持 per_row/single_key")
+    if redis_cfg.data_type not in ("string", "json", "hash", "list", "set", "zset"):
+        raise BizException(CASE_CONFIG_INVALID, f"Redis 数据类型非法: {redis_cfg.data_type}")
+    if redis_cfg.write_mode == "per_row" and redis_cfg.data_type in ("list", "set", "zset"):
+        raise BizException(
+            CASE_CONFIG_INVALID, "per_row 模式仅支持 string/json/hash，聚合类型请用 single_key"
+        )
+    if redis_cfg.write_mode == "single_key":
+        # 聚合 Key 须在任务内跨批次稳定：仅允许字面量与 {task_no}
+        try:
+            validate_single_key_template(redis_cfg.key_template)
+        except ValueError as e:
+            raise BizException(CASE_CONFIG_INVALID, str(e)) from e
+
+    field_names = {fc.column_name for fc in redis_cfg.field_configs or []}
+    for fc in redis_cfg.field_configs or []:
+        if not fc.column_name:
+            raise BizException(CASE_CONFIG_INVALID, "Redis value 字段缺少字段名")
+        strategy_code = (fc.strategy or "DEFAULT").upper()
+        if strategy_code in ("SKIP", "ITERATE_LIST"):
+            raise BizException(CASE_CONFIG_INVALID, f"Redis value 字段不支持 {strategy_code} 策略")
+        try:
+            strategy = get_strategy(strategy_code)
+            strategy.validate(fc.model_dump(), dict(fc.strategy_params or {}))
+        except ValueError as e:
+            raise BizException(STRATEGY_PARAM_INVALID, f"Redis 字段 {fc.column_name}：{e}") from e
+    if redis_cfg.data_type == "zset":
+        if not redis_cfg.score_field:
+            raise BizException(CASE_CONFIG_INVALID, "zset 类型必须指定 score_field 分数字段")
+        if redis_cfg.score_field not in field_names:
+            raise BizException(
+                CASE_CONFIG_INVALID, f"zset 分数字段不存在: {redis_cfg.score_field}"
+            )
+    if not redis_cfg.field_configs and not redis_cfg.value_template:
+        raise BizException(CASE_CONFIG_INVALID, "Redis 造数至少需要配置 value 字段或 value 模板")
+
+    try:
+        validate_template(redis_cfg.key_template, field_names, allow_row_fields=True)
+        if redis_cfg.value_template:
+            validate_template(redis_cfg.value_template, field_names, allow_row_fields=True)
+    except ValueError as e:
+        raise BizException(CASE_CONFIG_INVALID, f"模板非法：{e}") from e
+
 
 # ── Case 保存与执行 ──────────────────────────────────────────────
 
@@ -537,6 +703,13 @@ def _build_case_related(config: CaseConfig) -> tuple[str, int]:
         if assoc.target_table not in tables:
             tables.append(assoc.target_table)
     return json.dumps(tables, ensure_ascii=False), len(tables)
+
+
+def _apply_redis_case_display(config: CaseConfig) -> None:
+    """纯 Redis 造数 Case：main_table 落库为 redis:{key模板} 展示名（列表/日志/进度统一展示）。"""
+    if (config.case_type or "mysql") == "redis" and not config.main_table:
+        template = (config.redis_config.key_template if config.redis_config else "") or "unknown"
+        config.main_table = f"redis:{template}"[:190]
 
 
 async def _check_case_name_unique(
@@ -558,8 +731,9 @@ async def save_case(
 ) -> EngineSaveResponse:
     """仅保存 Case，不执行（POST /engine/save）。"""
     ds = await get_datasource_checked(db, current_user, req.datasource_id)
-    await validate_case_config(db, req.datasource_id, req.config)
+    await validate_case_config(db, req.datasource_id, req.config, current_user)
     await _check_case_name_unique(db, req.datasource_id, req.case_name)
+    _apply_redis_case_display(req.config)
 
     related_tables, related_count = _build_case_related(req.config)
     case = Case(
@@ -639,8 +813,9 @@ async def execute_case_config(
             TARGET_COUNT_TOO_LARGE, f"目标造数量超过单次限制（最大 {MAX_TARGET_COUNT} 条）"
         )
     ds = await get_datasource_checked(db, current_user, req.datasource_id)
-    await validate_case_config(db, req.datasource_id, req.config)
+    await validate_case_config(db, req.datasource_id, req.config, current_user)
     await _check_case_name_unique(db, req.datasource_id, req.case_name)
+    _apply_redis_case_display(req.config)
 
     related_tables, related_count = _build_case_related(req.config)
     case = Case(
