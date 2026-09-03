@@ -8,6 +8,7 @@ import type {
   CaseHistoryResult,
   CaseItem,
   CaseListQuery,
+  FolderListResult,
   PageResult,
 } from './types'
 
@@ -46,5 +47,25 @@ export const casesApi = {
   /** 批量执行（多个 case_id + 各自条数，返回与 items 同序的 task_nos） */
   batchExecute(items: Array<{ case_id: number; target_count: number }>) {
     return request.post<unknown, ApiResponse<CaseBatchExecuteResult>>('/v1/cases/batch-execute', { items })
+  },
+  /** 文件夹列表（含收纳数/总数/未分类数） */
+  folders() {
+    return request.get<unknown, ApiResponse<FolderListResult>>('/v1/cases/folders')
+  },
+  /** 新建文件夹 */
+  createFolder(name: string) {
+    return request.post<unknown, ApiResponse<null>>('/v1/cases/folders', { name })
+  },
+  /** 重命名文件夹 */
+  renameFolder(id: number, name: string) {
+    return request.put<unknown, ApiResponse<null>>(`/v1/cases/folders/${id}`, { name })
+  },
+  /** 删除文件夹（其中 Case 移到未分类） */
+  removeFolder(id: number) {
+    return request.delete<unknown, ApiResponse<null>>(`/v1/cases/folders/${id}`)
+  },
+  /** 批量移动 Case 到文件夹（folderId 为 null 移到未分类） */
+  batchMove(caseIds: number[], folderId: number | null) {
+    return request.put<unknown, ApiResponse<null>>('/v1/cases/batch-move', { case_ids: caseIds, folder_id: folderId })
   },
 }

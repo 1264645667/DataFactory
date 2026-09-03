@@ -107,6 +107,7 @@ class TaskDetailResponse(BaseModel):
     rolled_back_at: datetime | None = None
     rollback_rows: int = Field(default=0, description="当前可回滚条数（未回滚的回滚日志累计）")
     rollback_targets: list[str] = Field(default=[], description="可回滚目标列表（表名/Redis标识）")
+    table_ds_names: dict[str, str] = Field(default={}, description="表名→数据源名（跨数据源 Case 展示用）")
     start_at: datetime | None = None
     finish_at: datetime | None = None
     duration_ms: int | None = None

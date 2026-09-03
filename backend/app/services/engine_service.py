@@ -619,6 +619,35 @@ async def _validate_redis_syncs(
                 )
             if ref not in allowed_refs:
                 raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]字段不存在: {ref}")
+        # 别名映射校验：值为合法的 表.字段 引用或策略对象；别名并入模板可用占位符
+        alias_names: set[str] = set()
+        for alias, target in (sync.field_mapping or {}).items():
+            if not alias.strip():
+                raise BizException(CASE_CONFIG_INVALID, f"Redis 联动[{label}]存在空别名")
+            if isinstance(target, str):
+                if target not in allowed_refs:
+                    raise BizException(
+                        CASE_CONFIG_INVALID, f"Redis 联动[{label}]别名 {alias} 引用的字段不存在: {target}"
+                    )
+            else:
+                # 策略对象：校验策略合法性（不支持依赖表数据的策略）
+                code = (target.strategy or "").upper()
+                if code in ("SKIP", "ITERATE_LIST", "DERIVED"):
+                    raise BizException(
+                        CASE_CONFIG_INVALID, f"Redis 联动[{label}]别名 {alias} 不支持 {code} 策略"
+                    )
+                try:
+                    strategy = get_strategy(code)
+                    strategy.validate(
+                        {"column_name": alias, "data_type": "varchar", "column_type": "varchar(255)"},
+                        dict(target.strategy_params or {}),
+                    )
+                except ValueError as e:
+                    raise BizException(
+                        STRATEGY_PARAM_INVALID, f"Redis 联动[{label}]别名 {alias}：{e}"
+                    ) from e
+            alias_names.add(alias.strip())
+        allowed_refs |= alias_names
         if sync.data_type == "zset":
             if sync.score_field and sync.score_field not in allowed_refs:
                 raise BizException(
@@ -664,12 +693,15 @@ async def _validate_redis_case(
             raise BizException(CASE_CONFIG_INVALID, str(e)) from e
 
     field_names = {fc.column_name for fc in redis_cfg.field_configs or []}
-    for fc in redis_cfg.field_configs or []:
+    key_field_names = {fc.column_name for fc in redis_cfg.key_fields or []}
+    if len(key_field_names) != len(redis_cfg.key_fields or []):
+        raise BizException(CASE_CONFIG_INVALID, "Key 引用字段存在重名")
+    for fc in (redis_cfg.field_configs or []) + (redis_cfg.key_fields or []):
         if not fc.column_name:
-            raise BizException(CASE_CONFIG_INVALID, "Redis value 字段缺少字段名")
+            raise BizException(CASE_CONFIG_INVALID, "Redis 字段缺少字段名")
         strategy_code = (fc.strategy or "DEFAULT").upper()
         if strategy_code in ("SKIP", "ITERATE_LIST"):
-            raise BizException(CASE_CONFIG_INVALID, f"Redis value 字段不支持 {strategy_code} 策略")
+            raise BizException(CASE_CONFIG_INVALID, f"Redis 字段不支持 {strategy_code} 策略")
         try:
             strategy = get_strategy(strategy_code)
             strategy.validate(fc.model_dump(), dict(fc.strategy_params or {}))
@@ -685,8 +717,10 @@ async def _validate_redis_case(
     if not redis_cfg.field_configs and not redis_cfg.value_template:
         raise BizException(CASE_CONFIG_INVALID, "Redis 造数至少需要配置 value 字段或 value 模板")
 
+    # Key 模板占位符：Key 字段 ∪ value 字段均可引用（同名时 Key 字段优先）
+    key_allowed = key_field_names | field_names
     try:
-        validate_template(redis_cfg.key_template, field_names, allow_row_fields=True)
+        validate_template(redis_cfg.key_template, key_allowed, allow_row_fields=True)
         if redis_cfg.value_template:
             validate_template(redis_cfg.value_template, field_names, allow_row_fields=True)
     except ValueError as e:

@@ -1,6 +1,6 @@
 """Case 管理模块路由
 
-GET    /                   Case 列表（分页 + 筛选）
+GET    /                   Case 列表（分页 + 筛选 + 文件夹过滤）
 GET    /{case_id}          Case 详情（含 config_json）
 PUT    /{case_id}          修改 Case 配置（覆盖式）
 DELETE /{case_id}          逻辑删除 Case
@@ -8,6 +8,11 @@ POST   /{case_id}/execute  执行 Case（返回 task_no）
 POST   /{case_id}/copy     复制 Case
 GET    /{case_id}/history  Case 执行历史
 POST   /batch-execute      批量执行（静态路径须先于 /{case_id} 声明）
+GET    /folders            文件夹列表（含收纳数）
+POST   /folders            新建文件夹
+PUT    /folders/{folder_id}   重命名文件夹
+DELETE /folders/{folder_id}   删除文件夹（Case 移到未分类）
+PUT    /batch-move         批量移动到文件夹
 """
 
 from datetime import datetime
@@ -21,6 +26,7 @@ from app.models.user import User
 from app.schemas.case import (
     CaseBatchExecuteRequest,
     CaseBatchExecuteResponse,
+    CaseBatchMoveRequest,
     CaseCopyRequest,
     CaseCopyResponse,
     CaseDetail,
@@ -28,6 +34,8 @@ from app.schemas.case import (
     CaseExecuteResponse,
     CaseListItem,
     CaseUpdateRequest,
+    FolderListResponse,
+    FolderSaveRequest,
 )
 from app.schemas.response import ApiResponse, PageData
 from app.services import case_service
@@ -49,6 +57,8 @@ async def list_cases(
     start_time: datetime | None = Query(default=None),
     end_time: datetime | None = Query(default=None),
     main_table: str | None = Query(default=None),
+    folder_id: int | None = Query(default=None, description="按文件夹过滤"),
+    unfiled: bool = Query(default=False, description="仅看未分类"),
     current_user: User = Depends(require_permission("CASE:VIEW")),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[PageData[CaseListItem]]:
@@ -57,9 +67,68 @@ async def list_cases(
         page=page_params.page, page_size=page_params.page_size,
         datasource_id=datasource_id, name=name, created_by=created_by,
         last_exec_status=last_exec_status, start_time=to_local_naive(start_time), end_time=to_local_naive(end_time),
-        main_table=main_table,
+        main_table=main_table, folder_id=folder_id, unfiled=unfiled,
     )
     return ApiResponse(data=data)
+
+
+# ── 文件夹（静态路径须先于 /{case_id} 声明，防止被路径参数误匹配） ──
+
+
+@router.get("/folders", summary="文件夹列表（含收纳数）")
+async def list_folders(
+    current_user: User = Depends(require_permission("CASE:VIEW")),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[FolderListResponse]:
+    data = await case_service.list_folders(db, current_user=current_user)
+    return ApiResponse(data=FolderListResponse(**data))
+
+
+@router.post("/folders", summary="新建文件夹")
+async def create_folder(
+    body: FolderSaveRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("CASE:CREATE")),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[dict]:
+    item = await case_service.create_folder(db, current_user=current_user, name=body.name, ip=_ip(request))
+    return ApiResponse(data=item.model_dump(), message="文件夹已创建")
+
+
+@router.put("/folders/{folder_id}", summary="重命名文件夹")
+async def rename_folder(
+    folder_id: int,
+    body: FolderSaveRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("CASE:EDIT")),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[None]:
+    await case_service.rename_folder(db, current_user=current_user, folder_id=folder_id, name=body.name, ip=_ip(request))
+    return ApiResponse(message="已重命名")
+
+
+@router.delete("/folders/{folder_id}", summary="删除文件夹（其中 Case 移到未分类）")
+async def delete_folder(
+    folder_id: int,
+    request: Request,
+    current_user: User = Depends(require_permission("CASE:DELETE")),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[None]:
+    await case_service.delete_folder(db, current_user=current_user, folder_id=folder_id, ip=_ip(request))
+    return ApiResponse(message="文件夹已删除，其中 Case 已移到未分类")
+
+
+@router.put("/batch-move", summary="批量移动 Case 到文件夹")
+async def batch_move(
+    body: CaseBatchMoveRequest,
+    request: Request,
+    current_user: User = Depends(require_permission("CASE:EDIT")),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[None]:
+    await case_service.move_cases(
+        db, current_user=current_user, case_ids=body.case_ids, folder_id=body.folder_id, ip=_ip(request)
+    )
+    return ApiResponse(message="已移动")
 
 
 @router.post("/batch-execute", summary="批量执行（每个 Case 独立条数，串行提交）")

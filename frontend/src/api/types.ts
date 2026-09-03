@@ -254,6 +254,8 @@ export interface RedisSyncConfig {
   data_type: 'string' | 'json' | 'hash' | 'list' | 'set' | 'zset'
   /** 参与 value 的字段（表.字段）；空=主表全部非 SKIP 字段 */
   fields: string[]
+  /** 模板占位符别名映射：{别名: 表.字段 或 策略对象}（value 模板中用 {别名} 引用） */
+  field_mapping?: Record<string, string | { strategy: string; strategy_params: Record<string, unknown> }>
   /** 自定义 value 模板（可选） */
   value_template?: string | null
   /** zset 分数字段（表.字段） */
@@ -269,6 +271,8 @@ export interface RedisCaseConfig {
   data_type: 'string' | 'json' | 'hash' | 'list' | 'set' | 'zset'
   /** value 字段生成策略（column_name 即字段名） */
   field_configs: FieldStrategyConfig[]
+  /** Key 引用字段（独立配置，与 value 字段解耦；同名时 Key 渲染优先取这里） */
+  key_fields?: FieldStrategyConfig[]
   value_template?: string | null
   score_field?: string | null
   ttl_seconds: number
@@ -384,6 +388,25 @@ export interface CaseListQuery {
   start_time?: string
   end_time?: string
   main_table?: string
+  /** 按文件夹过滤 */
+  folder_id?: number
+  /** 仅看未分类 */
+  unfiled?: boolean
+}
+
+/** Case 文件夹项 */
+export interface CaseFolder {
+  id: number
+  name: string
+  case_count: number
+  created_at: string
+}
+
+/** 文件夹列表响应 */
+export interface FolderListResult {
+  folders: CaseFolder[]
+  total_count: number
+  unfiled_count: number
 }
 
 /** Case 执行历史项（后端 CaseHistoryItem） */
@@ -504,6 +527,8 @@ export interface TaskDetailData {
   rollback_rows: number
   /** 可回滚目标列表（含条数描述） */
   rollback_targets: string[]
+  /** 表名→数据源名（跨数据源 Case 展示用） */
+  table_ds_names?: Record<string, string>
   start_at: string | null
   finish_at: string | null
   duration_ms: number | null

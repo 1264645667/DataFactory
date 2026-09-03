@@ -8,11 +8,11 @@ import json
 from datetime import datetime
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ensure_group_visible, group_filter_value
-from app.models.case import Case
+from app.models.case import Case, CaseFolder
 from app.models.task import ExecTask
 from app.models.user import User
 from app.schemas.case import (
@@ -21,10 +21,13 @@ from app.schemas.case import (
     CaseHistoryItem,
     CaseListItem,
     CaseUpdateRequest,
+    FolderItem,
 )
 from app.schemas.engine import CaseConfig
 from app.schemas.errors import (
     CASE_NOT_FOUND,
+    FOLDER_NAME_TAKEN,
+    FOLDER_NOT_FOUND,
     TARGET_COUNT_TOO_LARGE,
     BizException,
 )
@@ -67,8 +70,10 @@ async def list_cases(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     main_table: str | None = None,
+    folder_id: int | None = None,
+    unfiled: bool = False,
 ) -> PageData[CaseListItem]:
-    """Case 列表（分组过滤 + 筛选 + 分页）。
+    """Case 列表（分组过滤 + 筛选 + 分页 + 文件夹过滤）。
 
     列表查询显式指定列（禁 SELECT config_json 大字段，避免列表页性能问题）。
     """
@@ -78,6 +83,10 @@ async def list_cases(
         conditions.append(Case.group_type == group_type)
     if datasource_id is not None:
         conditions.append(Case.datasource_id == datasource_id)
+    if folder_id is not None:
+        conditions.append(Case.folder_id == folder_id)
+    if unfiled:
+        conditions.append(Case.folder_id.is_(None))
     if name:
         conditions.append(Case.case_name.like(f"%{name}%"))
     if created_by is not None:
@@ -287,6 +296,7 @@ async def copy_case(
         case_name=new_name,
         datasource_id=source.datasource_id,
         datasource_name=source.datasource_name,
+        folder_id=source.folder_id,  # 复制保留原文件夹归属
         main_table=source.main_table,
         related_tables=source.related_tables,
         related_count=source.related_count,
@@ -441,3 +451,129 @@ async def get_case_history(
         "success_count": int(success_count or 0),
         "total_rows": int(total_rows or 0),
     }
+
+
+# ── Case 文件夹 ──────────────────────────────────────────────────
+
+
+async def list_folders(db: AsyncSession, *, current_user: User) -> dict:
+    """文件夹列表（分组隔离）：含各文件夹收纳数 + 全部/未分类计数。"""
+    group_type = group_filter_value(current_user)
+    folder_conditions = [] if group_type is None else [CaseFolder.group_type == group_type]
+    folders = list(
+        (await db.execute(
+            select(CaseFolder).where(*folder_conditions).order_by(CaseFolder.id)
+        )).scalars().all()
+    )
+    case_conditions = [Case.is_deleted == 0]
+    if group_type is not None:
+        case_conditions.append(Case.group_type == group_type)
+    count_rows = (
+        await db.execute(
+            select(Case.folder_id, func.count())
+            .where(*case_conditions)
+            .group_by(Case.folder_id)
+        )
+    ).all()
+    by_folder = {fid: int(cnt) for fid, cnt in count_rows}
+    items = [
+        FolderItem(id=f.id, name=f.name, case_count=by_folder.get(f.id, 0), created_at=f.created_at)
+        for f in folders
+    ]
+    return {
+        "folders": items,
+        "total_count": sum(by_folder.values()),
+        "unfiled_count": by_folder.get(None, 0),
+    }
+
+
+async def _check_folder_name_unique(
+    db: AsyncSession, group_type: int, name: str, exclude_id: int | None = None
+) -> None:
+    """同分组内文件夹名称唯一（1405）。"""
+    stmt = select(CaseFolder.id).where(CaseFolder.group_type == group_type, CaseFolder.name == name)
+    if exclude_id is not None:
+        stmt = stmt.where(CaseFolder.id != exclude_id)
+    result = await db.execute(stmt)
+    if result.scalar_one_or_none() is not None:
+        raise BizException(FOLDER_NAME_TAKEN)
+
+
+async def create_folder(
+    db: AsyncSession, *, current_user: User, name: str, ip: str | None
+) -> FolderItem:
+    """新建文件夹（归属创建人所在分组）。"""
+    group_type = current_user.group_type
+    await _check_folder_name_unique(db, group_type, name)
+    folder = CaseFolder(name=name, group_type=group_type, created_by=current_user.id)
+    db.add(folder)
+    await db.flush()
+    await db.refresh(folder)
+    await audit(
+        db, user_id=current_user.id, username=current_user.username, action="CREATE_FOLDER",
+        resource="case_folder", resource_id=folder.id, detail=f"新建文件夹「{name}」", ip=ip,
+    )
+    await db.commit()
+    return FolderItem(id=folder.id, name=folder.name, case_count=0, created_at=folder.created_at)
+
+
+async def _get_folder_checked(db: AsyncSession, current_user: User, folder_id: int) -> CaseFolder:
+    """获取文件夹并校验分组数据权限。"""
+    folder = await db.get(CaseFolder, folder_id)
+    if folder is None:
+        raise BizException(FOLDER_NOT_FOUND)
+    ensure_group_visible(current_user, folder.group_type, FOLDER_NOT_FOUND)
+    return folder
+
+
+async def rename_folder(
+    db: AsyncSession, *, current_user: User, folder_id: int, name: str, ip: str | None
+) -> None:
+    """重命名文件夹。"""
+    folder = await _get_folder_checked(db, current_user, folder_id)
+    await _check_folder_name_unique(db, folder.group_type, name, exclude_id=folder_id)
+    folder.name = name
+    await audit(
+        db, user_id=current_user.id, username=current_user.username, action="RENAME_FOLDER",
+        resource="case_folder", resource_id=folder_id, detail=f"重命名为「{name}」", ip=ip,
+    )
+    await db.commit()
+
+
+async def delete_folder(
+    db: AsyncSession, *, current_user: User, folder_id: int, ip: str | None
+) -> None:
+    """删除文件夹：其中 Case 自动移到未分类（不删 Case）。"""
+    folder = await _get_folder_checked(db, current_user, folder_id)
+    await db.execute(
+        update(Case).where(Case.folder_id == folder_id).values(folder_id=None)
+    )
+    await db.delete(folder)
+    await audit(
+        db, user_id=current_user.id, username=current_user.username, action="DELETE_FOLDER",
+        resource="case_folder", resource_id=folder_id,
+        detail=f"删除文件夹「{folder.name}」，其中 Case 移到未分类", ip=ip,
+    )
+    await db.commit()
+
+
+async def move_cases(
+    db: AsyncSession, *, current_user: User, case_ids: list[int], folder_id: int | None, ip: str | None
+) -> None:
+    """批量移动 Case 到文件夹（folder_id=None 移到未分类）。"""
+    target_name = "未分类"
+    if folder_id is not None:
+        folder = await _get_folder_checked(db, current_user, folder_id)
+        target_name = folder.name
+    # 逐个校验 Case 归属（跨组拒绝）
+    for case_id in case_ids:
+        await get_case_checked(db, current_user, case_id)
+    await db.execute(
+        update(Case).where(Case.id.in_(case_ids)).values(folder_id=folder_id)
+    )
+    await audit(
+        db, user_id=current_user.id, username=current_user.username, action="MOVE_CASE",
+        resource="case", resource_id=None,
+        detail=f"移动 {len(case_ids)} 个 Case 到「{target_name}」", ip=ip,
+    )
+    await db.commit()

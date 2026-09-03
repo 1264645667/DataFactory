@@ -125,7 +125,16 @@ const columns: DataTableColumns<Datasource> = [
       return h(NTag, { size: 'small', type: s.type }, () => s.text)
     },
   },
-  { title: '表数量', key: 'table_count', width: 80 },
+  {
+    title: '数量',
+    key: 'table_count',
+    width: 90,
+    // MySQL=表数量；Redis=Key 数量（同步时取 DBSIZE）
+    render: (r) =>
+      (r.db_type || '').toLowerCase() === 'redis'
+        ? `${r.table_count ?? 0} keys`
+        : String(r.table_count ?? 0),
+  },
   { title: '最后同步时间', key: 'last_sync_at', width: 160, render: (r) => formatDateTime(r.last_sync_at) },
   {
     title: '操作',

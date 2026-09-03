@@ -57,6 +57,8 @@ CASE_NOT_FOUND = 1400  # Case 不存在或已被删除
 CASE_NAME_TAKEN = 1401  # 该数据源下已存在同名 Case
 CASE_SCHEMA_OUTDATED = 1402  # 检测到表结构已更新，以下字段配置可能失效
 CASE_CONFIG_INVALID = 1403  # Case 配置不合法，请重新检查字段策略
+FOLDER_NOT_FOUND = 1404  # 文件夹不存在
+FOLDER_NAME_TAKEN = 1405  # 文件夹名称已存在
 
 # ── 场景模块（1500~1599）────────────────────────────────────
 SCENE_NOT_FOUND = 1500  # 场景不存在或已被删除
@@ -113,6 +115,8 @@ ERROR_MESSAGES: dict[int, str] = {
     CASE_NAME_TAKEN: "该数据源下已存在同名 Case",
     CASE_SCHEMA_OUTDATED: "检测到表结构已更新，以下字段配置可能失效",
     CASE_CONFIG_INVALID: "Case 配置不合法，请重新检查字段策略",
+    FOLDER_NOT_FOUND: "文件夹不存在",
+    FOLDER_NAME_TAKEN: "文件夹名称已存在",
     SCENE_NOT_FOUND: "场景不存在或已被删除",
     SCENE_NAME_TAKEN: "场景名称已存在",
     SCENE_NODE_TOO_FEW: "场景至少需要 2 个 Case 节点",

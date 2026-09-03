@@ -1,6 +1,39 @@
 <template>
-  <!-- Case 管理列表页 -->
+  <!-- Case 管理列表页（左侧文件夹收纳 + 右侧列表） -->
   <div class="case-list-page">
+    <!-- 文件夹栏 -->
+    <div class="folder-panel glass-card">
+      <div class="folder-title">文件夹</div>
+      <div class="folder-list">
+        <div class="folder-item" :class="{ active: activeFolder === 'all' }" @click="selectFolder('all')">
+          <n-icon class="folder-icon"><FolderOpenOutline /></n-icon>
+          <span class="folder-name">全部</span>
+          <span class="folder-count">{{ folderData?.total_count ?? 0 }}</span>
+        </div>
+        <div class="folder-item" :class="{ active: activeFolder === 'unfiled' }" @click="selectFolder('unfiled')">
+          <n-icon class="folder-icon"><FolderOutline /></n-icon>
+          <span class="folder-name">未分类</span>
+          <span class="folder-count">{{ folderData?.unfiled_count ?? 0 }}</span>
+        </div>
+        <div
+          v-for="f in folderData?.folders ?? []"
+          :key="f.id"
+          class="folder-item"
+          :class="{ active: activeFolder === f.id }"
+          @click="selectFolder(f.id)"
+        >
+          <n-icon class="folder-icon"><FolderOutline /></n-icon>
+          <span class="folder-name" :title="f.name">{{ f.name }}</span>
+          <span class="folder-count">{{ f.case_count }}</span>
+          <n-dropdown trigger="click" :options="folderMenu" @select="(key: string) => onFolderAction(key, f)">
+            <n-icon class="folder-more" @click.stop><EllipsisHorizontalOutline /></n-icon>
+          </n-dropdown>
+        </div>
+      </div>
+      <div v-if="hasPermission('CASE:CREATE')" class="folder-add" @click="openFolderModal()">+ 新建文件夹</div>
+    </div>
+
+    <!-- 右侧 Case 列表 -->
     <div class="gradient-border-card list-card">
       <!-- 筛选条件行 -->
       <div class="filter-row">
@@ -16,6 +49,17 @@
       <div class="op-row">
         <n-button size="small" :disabled="selectedIds.length === 0" @click="openBatchExecute">批量执行</n-button>
         <n-button size="small" type="error" ghost :disabled="selectedIds.length === 0" @click="handleBatchDelete">批量删除</n-button>
+        <div class="move-group">
+          <n-select
+            v-model:value="moveTarget"
+            :options="moveOptions"
+            size="small"
+            placeholder="移动到…"
+            style="width: 140px"
+            :disabled="selectedIds.length === 0"
+          />
+          <n-button size="small" :disabled="selectedIds.length === 0 || moveTarget === null" @click="handleBatchMove">移动</n-button>
+        </div>
       </div>
 
       <!-- Case 列表表格 -->
@@ -25,6 +69,7 @@
           :columns="columns"
           :data="list"
           :pagination="false"
+          :scroll-x="1140"
           size="small"
           :row-key="(row: CaseItem) => row.id"
           :checked-row-keys="selectedIds"
@@ -41,6 +86,17 @@
         </div>
       </n-spin>
     </div>
+
+    <!-- 文件夹新建/重命名弹窗 -->
+    <n-modal v-model:show="folderModalShow" preset="card" :title="editingFolder ? '重命名文件夹' : '新建文件夹'" style="width: 400px">
+      <n-input v-model:value="folderName" placeholder="文件夹名称（1~50 字）" maxlength="50" show-count />
+      <template #footer>
+        <div class="modal-actions">
+          <n-button @click="folderModalShow = false">取消</n-button>
+          <n-button class="gradient-btn" :loading="folderSaving" @click="handleFolderSave">保存</n-button>
+        </div>
+      </template>
+    </n-modal>
 
     <!-- 执行确认弹窗（复用 4.4.7） -->
     <ExecuteModal
@@ -105,11 +161,12 @@
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { EllipsisHorizontalOutline, FolderOpenOutline, FolderOutline } from '@vicons/ionicons5'
 import { NButton, NTag, type DataTableColumns } from 'naive-ui'
 import { casesApi } from '@/api/cases'
 import { datasourceApi } from '@/api/datasource'
 import { usersApi } from '@/api/users'
-import type { CaseHistoryItem, CaseItem, ExecStatusCode, LastExecStatusCode } from '@/api/types'
+import type { CaseFolder, CaseHistoryItem, CaseItem, ExecStatusCode, FolderListResult, LastExecStatusCode } from '@/api/types'
 import ExecuteModal from '@/components/business/ExecuteModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -143,6 +200,98 @@ const hasFilter = computed(
 
 const datasourceOptions = ref<Array<{ label: string; value: number }>>([])
 const memberOptions = ref<Array<{ label: string; value: number }>>([])
+
+// ---------------- 文件夹收纳 ----------------
+/** 当前选中文件夹：all=全部 / unfiled=未分类 / 数字=文件夹ID */
+const activeFolder = ref<number | 'all' | 'unfiled'>('all')
+const folderData = ref<FolderListResult | null>(null)
+const folderModalShow = ref(false)
+const folderSaving = ref(false)
+const folderName = ref('')
+const editingFolder = ref<CaseFolder | null>(null)
+const moveTarget = ref<number | null>(null) // -1 = 未分类
+
+const folderMenu = [
+  { label: '重命名', key: 'rename' },
+  { label: '删除', key: 'delete', props: { style: 'color:#ef4444' } },
+]
+
+/** 移动目标选项（-1=未分类） */
+const moveOptions = computed(() => [
+  { label: '未分类', value: -1 },
+  ...(folderData.value?.folders ?? []).map((f) => ({ label: f.name, value: f.id })),
+])
+
+async function loadFolders(): Promise<void> {
+  try {
+    const res = await casesApi.folders()
+    folderData.value = res.data
+  } catch {
+    // 文件夹加载失败不阻塞列表
+  }
+}
+
+/** 切换文件夹：过滤列表 */
+function selectFolder(key: number | 'all' | 'unfiled'): void {
+  activeFolder.value = key
+  loadList(1)
+}
+
+function openFolderModal(folder?: CaseFolder): void {
+  editingFolder.value = folder ?? null
+  folderName.value = folder?.name ?? ''
+  folderModalShow.value = true
+}
+
+async function handleFolderSave(): Promise<void> {
+  const name = folderName.value.trim()
+  if (!name) {
+    window.$message.error('请输入文件夹名称')
+    return
+  }
+  folderSaving.value = true
+  try {
+    if (editingFolder.value) {
+      await casesApi.renameFolder(editingFolder.value.id, name)
+    } else {
+      await casesApi.createFolder(name)
+    }
+    window.$message.success('已保存')
+    folderModalShow.value = false
+    await loadFolders()
+  } finally {
+    folderSaving.value = false
+  }
+}
+
+/** 文件夹操作（重命名/删除） */
+function onFolderAction(key: string, folder: CaseFolder): void {
+  if (key === 'rename') {
+    openFolderModal(folder)
+    return
+  }
+  window.$dialog.warning({
+    title: '确认删除文件夹',
+    content: `删除文件夹「${folder.name}」？其中 ${folder.case_count} 个 Case 将移到未分类（Case 本身不删除）。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      await casesApi.removeFolder(folder.id)
+      window.$message.success('已删除')
+      if (activeFolder.value === folder.id) activeFolder.value = 'all'
+      await Promise.all([loadFolders(), loadList()])
+    },
+  })
+}
+
+/** 批量移动到文件夹 */
+async function handleBatchMove(): Promise<void> {
+  if (!selectedIds.value.length || moveTarget.value === null) return
+  await casesApi.batchMove(selectedIds.value, moveTarget.value === -1 ? null : moveTarget.value)
+  window.$message.success('已移动')
+  moveTarget.value = null
+  await Promise.all([loadFolders(), loadList()])
+}
 // 最后执行状态摘要码：0未执行 1成功 2失败 3部分成功
 const statusOptions = [
   { label: '成功', value: 1 },
@@ -182,7 +331,8 @@ const columns: DataTableColumns<CaseItem> = [
   {
     title: 'Case 名称',
     key: 'case_name',
-    width: 200,
+    minWidth: 170,
+    ellipsis: { tooltip: true },
     render: (row) =>
       h(
         'a',
@@ -190,22 +340,23 @@ const columns: DataTableColumns<CaseItem> = [
         row.case_name,
       ),
   },
-  { title: '数据源', key: 'datasource_name', width: 120 },
+  { title: '数据源', key: 'datasource_name', width: 110, ellipsis: { tooltip: true } },
   { title: '主表', key: 'main_table', width: 150, ellipsis: { tooltip: true } },
-  { title: '关联表数', key: 'related_count', width: 80 },
-  { title: '创建人', key: 'creator_name', width: 80 },
-  { title: '创建时间', key: 'created_at', width: 140, render: (r) => formatDateTimeMin(r.created_at) },
+  { title: '关联表数', key: 'related_count', width: 78 },
+  { title: '创建人', key: 'creator_name', width: 76 },
+  { title: '创建时间', key: 'created_at', width: 130, render: (r) => formatDateTimeMin(r.created_at) },
   {
     title: '最后执行时间',
     key: 'last_exec_at',
-    width: 140,
+    width: 130,
     render: (r) => (r.last_exec_at ? formatDateTimeMin(r.last_exec_at) : h('span', { style: 'color:#64748b' }, '未执行')),
   },
-  { title: '最后执行状态', key: 'last_exec_status', width: 100, render: (r) => statusTag(r.last_exec_status) },
+  { title: '最后执行状态', key: 'last_exec_status', width: 96, render: (r) => statusTag(r.last_exec_status) },
   {
     title: '操作',
     key: 'actions',
-    width: 230,
+    width: 210,
+    fixed: 'right',
     render: (row) => {
       const btns = []
       if (hasPermission('CASE:EXECUTE')) {
@@ -253,6 +404,9 @@ async function loadList(p?: number): Promise<void> {
       last_exec_status: filters.status.length ? filters.status : undefined,
       start_time: start ? new Date(start).toISOString() : undefined,
       end_time: end ? new Date(end).toISOString() : undefined,
+      // 文件夹过滤：all 不过滤 / unfiled 未分类 / 数字 指定文件夹
+      folder_id: typeof activeFolder.value === 'number' ? activeFolder.value : undefined,
+      unfiled: activeFolder.value === 'unfiled' ? true : undefined,
     })
     list.value = res.data.items ?? []
     total.value = res.data.total ?? 0
@@ -438,6 +592,7 @@ async function openHistory(row: CaseItem): Promise<void> {
 
 onMounted(async () => {
   loadList(1)
+  loadFolders()
   try {
     const [dsRes, userRes] = await Promise.all([
       datasourceApi.list(),
@@ -452,7 +607,98 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.case-list-page {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+/* 左侧文件夹栏 */
+.folder-panel {
+  width: 184px;
+  flex-shrink: 0;
+  padding: 12px;
+  position: sticky;
+  top: 0;
+}
+.folder-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 0 8px 8px;
+}
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #cbd5e1;
+  transition: background 0.15s;
+}
+.folder-item:hover {
+  background: rgba(124, 58, 237, 0.1);
+}
+.folder-item.active {
+  background: rgba(124, 58, 237, 0.18);
+  color: #a78bfa;
+}
+.folder-icon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+.folder-item.active .folder-icon {
+  color: #a78bfa;
+}
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-count {
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  padding: 0 6px;
+  flex-shrink: 0;
+}
+.folder-more {
+  color: #64748b;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.folder-item:hover .folder-more {
+  opacity: 1;
+}
+.folder-add {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 13px;
+  color: #a78bfa;
+  cursor: pointer;
+  text-align: center;
+}
+.folder-add:hover {
+  background: rgba(124, 58, 237, 0.1);
+  border-radius: 6px;
+}
+/* 右侧列表 */
 .list-card {
+  flex: 1;
+  min-width: 0;
   padding: 16px;
 }
 .filter-row {
@@ -465,6 +711,12 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   margin-bottom: 12px;
+  align-items: center;
+}
+.move-group {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
 }
 .pager {
   display: flex;

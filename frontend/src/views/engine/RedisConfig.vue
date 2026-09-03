@@ -50,6 +50,75 @@
               :placeholder="form.writeMode === 'per_row' ? '如 user:profile:{incr} 或 user:{id}' : '如 case:{task_no}:users'"
             />
           </n-form-item>
+
+          <!-- Key 引用字段（独立于 value 字段；同名时 Key 渲染优先取独立配置，实现解耦） -->
+          <div v-if="keyRefs.length > 0 || keyFieldRows.length > 0" class="key-fields-block">
+            <div class="key-fields-head">
+              <span class="key-fields-title">Key 引用字段</span>
+              <n-button size="tiny" @click="addFieldTo(keyFieldRows)">添加 Key 字段</n-button>
+            </div>
+            <div v-if="keyRefs.length > 0" class="key-refs">
+              <template v-for="ref in keyRefs" :key="ref">
+                <n-tag
+                  size="small"
+                  :type="keyRefSource(ref) === 'independent' ? 'warning' : keyRefSource(ref) === 'shared' ? 'default' : 'error'"
+                >{{ ref }} · {{ keyRefSource(ref) === 'independent' ? 'Key 独立配置' : keyRefSource(ref) === 'shared' ? '共享 value 字段' : '未定义' }}</n-tag>
+                <n-button
+                  v-if="keyRefSource(ref) === 'shared'"
+                  text
+                  size="tiny"
+                  type="primary"
+                  @click="promoteToKeyField(ref)"
+                >独立配置</n-button>
+              </template>
+            </div>
+            <p class="dim key-fields-tip">未独立配置时，Key 占位符取同名 value 字段的值（共享）；独立配置后两者互不影响。</p>
+            <table v-if="keyFieldRows.length > 0" class="field-table">
+              <thead>
+                <tr>
+                  <th style="width: 180px">字段名</th>
+                  <th style="width: 110px">类型</th>
+                  <th style="width: 170px">造数策略</th>
+                  <th>策略参数</th>
+                  <th style="width: 60px">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, i) in keyFieldRows" :key="i">
+                  <td>
+                    <n-input v-model:value="row.name" size="small" placeholder="占位符名" @update:value="dirty = true" />
+                  </td>
+                  <td>
+                    <n-select
+                      :value="row.kind"
+                      :options="kindOptions"
+                      size="small"
+                      @update:value="(v: string) => changeKind(row, v)"
+                    />
+                  </td>
+                  <td>
+                    <n-select
+                      :value="row.strategy"
+                      :options="strategyOptionsFor(row)"
+                      size="small"
+                      @update:value="(v: StrategyCode) => changeStrategy(row, v)"
+                    />
+                  </td>
+                  <td>
+                    <StrategyParams
+                      :strategy="row.strategy"
+                      :column="syntheticColumn(row)"
+                      :sibling-columns="[]"
+                      v-model="row.params"
+                    />
+                  </td>
+                  <td>
+                    <n-button text size="tiny" type="error" @click="removeFieldFrom(keyFieldRows, i)">删除</n-button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <n-form-item v-if="form.dataType === 'zset'" label="分数字段（从下方字段中选择）">
             <n-select
               v-model:value="form.scoreField"
@@ -61,9 +130,15 @@
             <n-input
               v-model:value="form.valueTemplate"
               type="textarea"
-              :rows="2"
+              :rows="4"
               placeholder='留空按数据类型默认组装（json=全部字段 JSON 对象）；示例：{"name":"{name}","mobile":"{mobile}"}'
             />
+            <template #feedback>
+              <div class="tpl-actions">
+                <n-button size="tiny" type="primary" secondary @click="parseTemplateFields">解析模板生成字段</n-button>
+                <span class="dim">粘贴业务 JSON 后点击：自动识别字段名/类型/初始值（自定义输入策略），模板字面量替换为 {字段} 占位符</span>
+              </div>
+            </template>
           </n-form-item>
         </n-form>
       </div>
@@ -72,7 +147,7 @@
       <div class="config-card gradient-border-card">
         <div class="field-head">
           <h3 class="card-title">value 字段（复用造数策略）</h3>
-          <n-button size="small" @click="addField">添加字段</n-button>
+          <n-button size="small" @click="addFieldTo(fieldRows)">添加字段</n-button>
         </div>
         <div class="field-table-wrap">
           <table class="field-table">
@@ -115,7 +190,7 @@
                   />
                 </td>
                 <td>
-                  <n-button text size="tiny" type="error" @click="removeField(i)">删除</n-button>
+                  <n-button text size="tiny" type="error" @click="removeFieldFrom(fieldRows, i)">删除</n-button>
                 </td>
               </tr>
             </tbody>
@@ -167,6 +242,7 @@ import StrategyParams from '@/components/business/StrategyParams.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
+import { parseJsonTemplate, extractFieldRefs, type ParsedTemplate } from '@/utils/jsonTemplate'
 import { getStrategyOptions, validateStrategyParams } from '@/utils/strategy'
 
 interface RedisFieldRow {
@@ -204,6 +280,20 @@ const form = reactive({
 })
 
 const fieldRows = ref<RedisFieldRow[]>([])
+/** Key 引用字段（独立配置，与 value 字段解耦；同名时 Key 渲染优先取这里） */
+const keyFieldRows = ref<RedisFieldRow[]>([])
+
+/** Key 模板引用的字段占位符（排除内置占位符） */
+const keyRefs = computed(() => extractFieldRefs(form.keyTemplate))
+const keyFieldSet = computed(() => new Set(keyFieldRows.value.map((r) => r.name.trim()).filter(Boolean)))
+const valueFieldSet = computed(() => new Set(fieldRows.value.map((r) => r.name.trim()).filter(Boolean)))
+
+/** Key 占位符来源状态：independent=Key 独立配置 / shared=共享 value 字段 / missing=未定义 */
+function keyRefSource(ref: string): 'independent' | 'shared' | 'missing' {
+  if (keyFieldSet.value.has(ref)) return 'independent'
+  if (valueFieldSet.value.has(ref)) return 'shared'
+  return 'missing'
+}
 
 const kindOptions = [
   { label: '字符串', value: 'string' },
@@ -269,14 +359,72 @@ function changeStrategy(row: RedisFieldRow, v: StrategyCode): void {
   dirty.value = true
 }
 
-function addField(): void {
-  fieldRows.value.push({ name: '', kind: 'string', strategy: 'UUID', params: {} })
+function addFieldTo(rows: RedisFieldRow[]): void {
+  rows.push({ name: '', kind: 'string', strategy: 'UUID', params: {} })
   dirty.value = true
 }
 
-function removeField(i: number): void {
-  fieldRows.value.splice(i, 1)
+function removeFieldFrom(rows: RedisFieldRow[], i: number): void {
+  rows.splice(i, 1)
   dirty.value = true
+}
+
+/** 把 value 字段复制为 Key 独立字段（解耦：Key 渲染不再跟随 value 策略变化） */
+function promoteToKeyField(name: string): void {
+  const src = fieldRows.value.find((r) => r.name === name)
+  keyFieldRows.value.push({
+    name,
+    kind: src?.kind ?? 'string',
+    strategy: src?.strategy ?? 'CUSTOM_VALUE',
+    params: { ...(src?.params ?? {}) },
+  })
+  dirty.value = true
+}
+
+/**
+ * 从 value 模板解析 JSON：叶子标量提取为字段行（自定义输入策略 + 模板原值），
+ * 模板中对应字面量替换为 {字段名} 占位符。
+ */
+function parseTemplateFields(): void {
+  const raw = form.valueTemplate.trim()
+  if (!raw) {
+    window.$message.warning('请先粘贴 JSON value 模板')
+    return
+  }
+  let parsed: ParsedTemplate
+  try {
+    parsed = parseJsonTemplate(raw)
+  } catch (e) {
+    window.$message.error(`JSON 解析失败：${(e as Error).message}`)
+    return
+  }
+  if (!parsed.fields.length) {
+    window.$message.warning('模板中没有可识别的标量字段（纯字面量/空结构）')
+    return
+  }
+
+  const applyParse = (): void => {
+    form.valueTemplate = parsed.template
+    fieldRows.value = parsed.fields.map((f) => ({
+      name: f.name,
+      kind: f.kind,
+      strategy: 'CUSTOM_VALUE',
+      params: { value: f.value },
+    }))
+    dirty.value = true
+    window.$message.success(`已识别 ${parsed.fields.length} 个字段，可在下方逐个调整策略和值`)
+  }
+  if (fieldRows.value.length > 0) {
+    window.$dialog.warning({
+      title: '覆盖现有字段',
+      content: `将用模板解析出的 ${parsed.fields.length} 个字段覆盖当前 ${fieldRows.value.length} 个字段配置，是否继续？`,
+      positiveText: '覆盖',
+      negativeText: '取消',
+      onPositiveClick: applyParse,
+    })
+  } else {
+    applyParse()
+  }
 }
 
 /** 校验全部配置，返回是否通过 */
@@ -302,6 +450,30 @@ function validateAll(): boolean {
       return false
     }
   }
+  // Key 引用字段：名称为空/重名校验 + 策略参数校验
+  const keyNames = new Set<string>()
+  for (const row of keyFieldRows.value) {
+    if (!row.name.trim()) {
+      window.$message.error('存在未命名的 Key 字段')
+      return false
+    }
+    if (keyNames.has(row.name.trim())) {
+      window.$message.error(`Key 字段名重复：${row.name}`)
+      return false
+    }
+    keyNames.add(row.name.trim())
+    const err = validateStrategyParams(syntheticColumn(row), row.strategy, row.params)
+    if (err) {
+      window.$message.error(`Key 字段「${row.name}」：${err}`)
+      return false
+    }
+  }
+  // Key 模板引用了未定义字段（既非 Key 字段也非 value 字段）
+  const missing = keyRefs.value.filter((r) => keyRefSource(r) === 'missing')
+  if (missing.length) {
+    window.$message.error(`Key 模板引用了未定义的字段：${missing.join('、')}（请添加为 value 字段或 Key 字段）`)
+    return false
+  }
   if (!fieldRows.value.length && !form.valueTemplate.trim()) {
     window.$message.error('至少配置一个 value 字段或填写 value 模板')
     return false
@@ -320,23 +492,26 @@ function validateAll(): boolean {
   return true
 }
 
+function toFieldConfig(r: RedisFieldRow): FieldStrategyConfig {
+  const col = syntheticColumn(r)
+  return {
+    column_name: r.name.trim(),
+    data_type: col.data_type,
+    column_type: col.column_type,
+    is_nullable: true,
+    is_primary_key: false,
+    strategy: r.strategy,
+    strategy_params: r.params,
+  }
+}
+
 function buildConfig(): CaseConfigJson {
   const redisConfig: RedisCaseConfig = {
     key_template: form.keyTemplate.trim(),
     write_mode: form.writeMode,
     data_type: form.dataType,
-    field_configs: fieldRows.value.map((r): FieldStrategyConfig => {
-      const col = syntheticColumn(r)
-      return {
-        column_name: r.name.trim(),
-        data_type: col.data_type,
-        column_type: col.column_type,
-        is_nullable: true,
-        is_primary_key: false,
-        strategy: r.strategy,
-        strategy_params: r.params,
-      }
-    }),
+    field_configs: fieldRows.value.map(toFieldConfig),
+    key_fields: keyFieldRows.value.map(toFieldConfig),
     value_template: form.valueTemplate.trim() || null,
     score_field: form.scoreField,
     ttl_seconds: form.ttlSeconds || 0,
@@ -428,12 +603,14 @@ async function loadCase(): Promise<void> {
       form.ttlSeconds = cfg.redis_config.ttl_seconds || 0
       form.valueTemplate = cfg.redis_config.value_template ?? ''
       form.scoreField = cfg.redis_config.score_field ?? null
-      fieldRows.value = (cfg.redis_config.field_configs ?? []).map((fc) => ({
+      const toRow = (fc: FieldStrategyConfig): RedisFieldRow => ({
         name: fc.column_name,
         kind: fc.data_type === 'int' || fc.data_type === 'bigint' ? 'number' : fc.data_type === 'datetime' ? 'datetime' : 'string',
         strategy: fc.strategy,
         params: { ...(fc.strategy_params ?? {}) },
-      }))
+      })
+      fieldRows.value = (cfg.redis_config.field_configs ?? []).map(toRow)
+      keyFieldRows.value = (cfg.redis_config.key_fields ?? []).map(toRow)
     }
     dirty.value = false
   } finally {
@@ -530,5 +707,37 @@ onMounted(loadCase)
 .dim {
   color: #64748b;
   font-size: 12px;
+}
+.tpl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.key-fields-block {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.key-fields-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.key-fields-title {
+  font-size: 13px;
+  color: #f59e0b;
+  font-weight: 600;
+}
+.key-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.key-fields-tip {
+  margin: 8px 0;
 }
 </style>

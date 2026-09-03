@@ -202,6 +202,24 @@ def _build_value(
     return json.dumps(named, ensure_ascii=False, default=_json_default)
 
 
+# 聚合单 Key（string/json）原子追加 Lua：读取既有 JSON 数组 → 追加本批成员 → 写回。
+# 逐成员尝试 JSON 反解，保证对象成员以对象形态入组（纯字符串成员保持字符串）。
+_APPEND_JSON_ARR_LUA = """
+local cur = redis.call('GET', KEYS[1])
+local arr = {}
+if cur and string.len(cur) > 0 then
+  local ok, decoded = pcall(cjson.decode, cur)
+  if ok and type(decoded) == 'table' then arr = decoded end
+end
+for i = 1, #ARGV do
+  local ok, v = pcall(cjson.decode, ARGV[i])
+  if ok then arr[#arr + 1] = v else arr[#arr + 1] = ARGV[i] end
+end
+redis.call('SET', KEYS[1], cjson.encode(arr))
+return #arr
+"""
+
+
 class _RedisBatchWriter:
     """单批次 Redis 写入器：收集命令 → pipeline(transaction=True) 原子执行。
 
@@ -236,9 +254,21 @@ class _RedisBatchWriter:
         task_no: str | None,
         value_template: str | None = None,
         short_names: bool = True,
+        key_rows_fields: list[dict[str, Any]] | None = None,
     ) -> tuple[int, dict]:
+        """写入一批行。
+
+        :param key_rows_fields: Key 渲染专用字段行（Redis Case 的 key_fields，与 value 解耦）；
+               Key 渲染上下文 = {**value行, **key行}（同名时 Key 字段优先），value 组装不受影响
+        """
         if not rows_fields:
             return 0, {"mode": "keys", "keys": []}
+
+        def _key_context(i: int) -> dict[str, Any]:
+            if key_rows_fields and i < len(key_rows_fields):
+                return {**rows_fields[i], **key_rows_fields[i]}
+            return rows_fields[i]
+
         incr_base = None
         if _template_has_incr(key_template) or (value_template and _template_has_incr(value_template)):
             incr_base = _reserve_incr_base(task_id, f"{key_template}‖{value_template or ''}", len(rows_fields))
@@ -271,8 +301,8 @@ class _RedisBatchWriter:
             elif self.data_type == "zset":
                 pipe.zadd(key, scores)
             else:
-                # string/json 聚合：整体 JSON 数组覆盖写入
-                pipe.set(key, json.dumps(members, ensure_ascii=False))
+                # string/json 聚合：Lua 原子追加到 JSON 数组（跨批次累积，不互相覆盖）
+                pipe.eval(_APPEND_JSON_ARR_LUA, 1, key, *members)
             if self.ttl_seconds > 0:
                 pipe.expire(key, self.ttl_seconds)
             written = len(members)
@@ -282,7 +312,7 @@ class _RedisBatchWriter:
         # per_row：每行一个 Key
         for i, fields in enumerate(rows_fields):
             key = render_template(
-                key_template, row_fields=fields, row_index=i,
+                key_template, row_fields=_key_context(i), row_index=i,
                 incr_base=incr_base, task_no=task_no,
             )
             if self.data_type == "hash" and not value_template:
@@ -325,25 +355,70 @@ class _RedisBatchWriter:
 
 
 def _row_fields_for_sync(
-    sync_cfg: dict, generated: dict[str, list[dict]], row_index: int, main_table: str
+    sync_cfg: dict, generated: dict[str, list[dict]], row_index: int, main_table: str,
+    strategy_cols: dict[str, list] | None = None,
 ) -> dict[str, Any]:
-    """按 fields 配置收集单行字段值；fields 为空时取主表全部已生成字段（键为 表.字段）。"""
-    spec = sync_cfg.get("fields") or []
-    if not spec:
-        main_rows = generated.get(main_table) or []
-        if row_index >= len(main_rows):
-            raise ValueError("主表生成行数不足，无法执行 Redis 联动")
-        return {f"{main_table}.{k}": v for k, v in main_rows[row_index].items()}
+    """按 fields 配置收集单行字段值；fields 为空时取主表全部已生成字段（键为 表.字段）。
+
+    field_mapping {别名: 表.字段 | {strategy, strategy_params}}：
+    - 字符串引用：取本批生成行的字段值
+    - 策略对象：取 strategy_cols 中该别名的本行预生成值（造数策略直出，不依赖 MySQL 字段）
+    """
     out: dict[str, Any] = {}
-    for ref in spec:
+
+    def _load_ref(ref: str) -> Any:
         if "." not in ref:
             raise ValueError(f"联动字段须为 表.字段 格式: {ref}")
         table, _, column = ref.partition(".")
         rows = generated.get(table)
         if rows is None or row_index >= len(rows):
             raise ValueError(f"联动字段 {ref} 所在表本批未生成数据")
-        out[ref] = rows[row_index].get(column)
+        return rows[row_index].get(column)
+
+    spec = sync_cfg.get("fields") or []
+    mapping = sync_cfg.get("field_mapping") or {}
+    if not spec and not mapping:
+        main_rows = generated.get(main_table) or []
+        if row_index >= len(main_rows):
+            raise ValueError("主表生成行数不足，无法执行 Redis 联动")
+        return {f"{main_table}.{k}": v for k, v in main_rows[row_index].items()}
+    for ref in spec:
+        out[ref] = _load_ref(ref)
+    # 别名映射并入上下文（同名时别名优先，供模板便捷引用）
+    for alias, target in mapping.items():
+        if isinstance(target, dict):
+            # 造数策略直出：取整批预生成列的本行值
+            col_values = (strategy_cols or {}).get(alias)
+            if col_values is None or row_index >= len(col_values):
+                raise ValueError(f"联动别名 {alias} 的策略生成值缺失")
+            out[alias] = col_values[row_index]
+        else:
+            out[alias] = _load_ref(target)
     return out
+
+
+def _generate_strategy_columns(
+    mapping: dict, batch_size: int, task_id: int, sync_label: str
+) -> dict[str, list]:
+    """field_mapping 中的策略对象：按别名整批预生成值列（INCR_FROM 用 Redis 计数器取连续区间）"""
+    from app.engine.strategies.number_strategies import prefetch_incr_range
+    from app.engine.strategies.registry import get_strategy
+
+    strategy_cols: dict[str, list] = {}
+    for alias, target in mapping.items():
+        if not isinstance(target, dict):
+            continue
+        code = (target.get("strategy") or "CUSTOM_VALUE").upper()
+        params = dict(target.get("strategy_params") or {})
+        strategy = get_strategy(code)
+        field_config = {"column_name": alias, "data_type": "varchar", "column_type": "varchar(255)"}
+        if code == "INCR_FROM":
+            params["range_start"] = prefetch_incr_range(
+                sync_redis_client, task_id, f"sync:{sync_label}", alias, batch_size
+            )
+        strategy.validate(field_config, params)
+        strategy_cols[alias] = [strategy.generate(field_config, params, i) for i in range(batch_size)]
+    return strategy_cols
 
 
 def execute_redis_syncs(
@@ -370,8 +445,12 @@ def execute_redis_syncs(
                 score_field=sync_cfg.get("score_field"),
                 key_template=sync_cfg.get("key_template") or "",
             )
+            # field_mapping 中的策略对象：整批预生成值列
+            strategy_cols = _generate_strategy_columns(
+                sync_cfg.get("field_mapping") or {}, batch_size, ctx.task_id, label
+            )
             rows_fields = [
-                _row_fields_for_sync(sync_cfg, generated, i, ctx.main_table)
+                _row_fields_for_sync(sync_cfg, generated, i, ctx.main_table, strategy_cols)
                 for i in range(batch_size)
             ]
             written, payload = writer.write_rows(
@@ -444,6 +523,7 @@ def execute_redis_case(ctx, session) -> dict:
         key_template=redis_cfg["key_template"],
     )
     field_configs = redis_cfg.get("field_configs") or []
+    key_field_configs = redis_cfg.get("key_fields") or []
     key_template = redis_cfg["key_template"]
     value_template = redis_cfg.get("value_template")
     log_table = ctx.main_table  # redis:{key模板}（任务创建时已生成展示名）
@@ -467,7 +547,19 @@ def execute_redis_case(ctx, session) -> dict:
                 task_id=ctx.task_id,
                 redis_client=sync_redis_client,
             )
-            rows_fields = [dict(row) for row in rows]
+            # 无 value 字段（纯模板/纯 Key 字段场景）：每行空字典，模板仅靠内置占位符与 Key 字段渲染
+            rows_fields = [dict(row) for row in rows] if field_configs else [{} for _ in range(size)]
+            # Key 引用字段独立生成（与 value 字段解耦；计数器 Key 用 #key 后缀隔离）
+            key_rows_fields: list[dict] | None = None
+            if key_field_configs:
+                key_rows, _ = generate_rows(
+                    table_name=f"{log_table}#key",
+                    field_configs=key_field_configs,
+                    count=size,
+                    task_id=ctx.task_id,
+                    redis_client=sync_redis_client,
+                )
+                key_rows_fields = [dict(row) for row in key_rows]
             written, payload = writer.write_rows(
                 key_template=key_template,
                 rows_fields=rows_fields,
@@ -475,6 +567,7 @@ def execute_redis_case(ctx, session) -> dict:
                 task_no=ctx.task_no,
                 value_template=value_template,
                 short_names=False,
+                key_rows_fields=key_rows_fields,
             )
             table_result = {
                 "table": log_table,

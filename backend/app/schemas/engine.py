@@ -83,11 +83,19 @@ class AssociationConfig(BaseModel):
     target_column: str
 
 
+class RedisMappingStrategy(BaseModel):
+    """联动映射的策略生成目标（别名值不由 MySQL 字段提供，按造数策略生成）。"""
+
+    strategy: str = Field(description="造数策略编码（不支持 SKIP/ITERATE_LIST/DERIVED）")
+    strategy_params: dict = Field(default_factory=dict)
+
+
 class RedisSyncConfig(BaseModel):
     """MySQL Case → Redis 联动同步配置（造数批次成功后按模板写 Redis）。
 
     key_template / value_template 占位符：
     - {表名.字段名}：引用本 Case 生成的字段值（如 {tax_change.customertaxno}）
+    - {别名}：field_mapping 中声明的映射键（值为 表.字段 或 策略对象）
     - {i}：行在批次内的序号（0 起）；{incr}：全局递增序号（1 起，跨批次连续）
     - {uuid} / {uuid:8}：随机 UUID（可指定截断长度）；{rand:6}：指定位数随机数字
     - {task_no}：执行任务编号；{ts} / {ts_ms}：当前时间戳（秒/毫秒）
@@ -100,6 +108,8 @@ class RedisSyncConfig(BaseModel):
     data_type: str = Field(default="string", description="string/json/hash/list/set/zset")
     # 参与 value 组装的字段（table.column 格式）；为空时取主表全部非 SKIP 字段
     fields: list[str] = []
+    # 模板占位符别名映射：{别名: 表.字段 或 策略对象{strategy, strategy_params}}
+    field_mapping: dict[str, str | RedisMappingStrategy] = {}
     value_template: str | None = Field(default=None, max_length=2000,
                                        description="自定义 value 模板，为空按 data_type 默认组装")
     score_field: str | None = Field(default=None, description="zset 分数字段（table.column）")
@@ -109,8 +119,9 @@ class RedisSyncConfig(BaseModel):
 class RedisCaseConfig(BaseModel):
     """纯 Redis 造数配置（case_type=redis 时生效）。
 
-    key_template 占位符：{字段名} 引用 field_configs 生成的值；
+    key_template 占位符：优先取 key_fields 的值，未定义则回退 value 字段（field_configs），
     其余同 RedisSyncConfig（{incr}/{uuid}/{rand:N}/{i}/{ts} 等）。
+    key_fields 与 value 字段同名时，Key 渲染用 key_fields 的值，value 组装不受影响（解耦）。
     """
 
     key_template: str = Field(min_length=1, max_length=500)
@@ -118,6 +129,8 @@ class RedisCaseConfig(BaseModel):
     data_type: str = Field(default="json", description="string/json/hash/list/set/zset")
     # value 字段生成策略（column_name 即字段名，复用造数策略引擎）
     field_configs: list[FieldConfig] = []
+    # Key 引用字段（独立配置，与 value 字段解耦；column_name 即占位符名）
+    key_fields: list[FieldConfig] = []
     value_template: str | None = Field(default=None, max_length=2000)
     score_field: str | None = Field(default=None, description="zset 分数字段名")
     ttl_seconds: int = Field(default=0, ge=0)

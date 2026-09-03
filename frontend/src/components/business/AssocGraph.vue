@@ -50,10 +50,10 @@
           </tspan>
         </text>
       </g>
-      <!-- 节点（dagre 分层：主表 → 各级关联表） -->
+      <!-- 节点（dagre 分层：主表 → 各级关联表；外来表显示 @数据源 副标题） -->
       <g v-for="node in layoutNodes" :key="node.name">
         <!-- 悬停显示完整表名（表名可能因超长被截断） -->
-        <title>{{ node.name }}</title>
+        <title>{{ fullTitle(node) }}</title>
         <rect
           :x="node.x"
           :y="node.y"
@@ -65,20 +65,20 @@
         />
         <text
           :x="node.x + nodeW / 2"
-          :y="node.isMain ? node.y + nodeH / 2 - 4 : node.y + nodeH / 2 + 4"
+          :y="hasSubtitle(node) ? node.y + nodeH / 2 - 4 : node.y + nodeH / 2 + 4"
           fill="#e2e8f0"
           class="assoc-node-name"
           :font-weight="node.isMain ? 600 : 400"
           text-anchor="middle"
         >{{ node.displayName }}</text>
         <text
-          v-if="node.isMain"
+          v-if="hasSubtitle(node)"
           :x="node.x + nodeW / 2"
           :y="node.y + nodeH / 2 + 13"
-          fill="#64748b"
+          :fill="node.isMain ? '#64748b' : '#f59e0b'"
           class="assoc-node-sub"
           text-anchor="middle"
-        >主表</text>
+        >{{ subtitleOf(node) }}</text>
       </g>
     </svg>
   </div>
@@ -90,7 +90,12 @@ import dagre from '@dagrejs/dagre'
 import type { Association } from '@/api/types'
 import { buildLayers } from '@/utils/dag'
 
-const props = defineProps<{ mainTable: string; associations: Association[] }>()
+const props = defineProps<{
+  mainTable: string
+  associations: Association[]
+  /** 表名 → 数据源名（跨数据源 Case 传入，外来表节点显示 @数据源 副标题） */
+  tableDs?: Record<string, string>
+}>()
 
 const nodeH = 46
 const LABEL_LINE_H = 15   // 字段标签行高
@@ -144,6 +149,28 @@ interface GraphNode {
   x: number
   y: number
   isMain: boolean
+  /** 外来表的数据源名（主数据源表为 undefined，保持节点简洁） */
+  dsName?: string
+}
+
+/** 节点是否有副标题行（主表=「主表」，外来表=@数据源） */
+function hasSubtitle(node: GraphNode): boolean {
+  return node.isMain || !!node.dsName
+}
+
+/** 数据源名过长时截断（节点宽度有限） */
+function truncateDs(name: string): string {
+  return name.length > 12 ? `${name.slice(0, 11)}…` : name
+}
+
+/** 节点悬停标题：表名 + 数据源（如有） */
+function fullTitle(node: GraphNode): string {
+  return node.dsName ? `${node.name}（数据源：${node.dsName}）` : node.name
+}
+
+/** 节点副标题：主表=「主表」，外来表=@数据源名（截断） */
+function subtitleOf(node: GraphNode): string {
+  return node.isMain ? '主表' : `@${truncateDs(node.dsName!)}`
 }
 interface GraphLine {
   path: string
@@ -190,6 +217,7 @@ const layout = computed<{ nodes: GraphNode[]; lines: GraphLine[]; width: number;
         x: n.x - nodeW.value / 2,
         y: n.y - nodeH / 2,
         isMain: name === props.mainTable,
+        dsName: name === props.mainTable ? undefined : props.tableDs?.[name],
       }
     })
     const lines: GraphLine[] = pairs.map((pair) => {
@@ -236,6 +264,7 @@ function fallbackLayout(
         x: 30 + li * gapX,
         y: 40 + ni * gapY,
         isMain: name === props.mainTable,
+        dsName: name === props.mainTable ? undefined : props.tableDs?.[name],
       })
     })
   })

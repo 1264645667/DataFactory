@@ -346,18 +346,19 @@ def _do_sync(datasource_id: int) -> dict:
         log = logger.bind(datasource_id=datasource_id, datasource=ds.name)
         log.info("sync_datasource_start")
 
-        # Redis 数据源：无表结构可同步，PING 探活即视为正常
+        # Redis 数据源：无表结构可同步，PING 探活 + DBSIZE 记录 Key 数量（列表页「数量」列展示）
         if (ds.db_type or "").strip().lower() == "redis":
             try:
                 from app.engine.redis_pool import get_sync_redis
 
-                get_sync_redis(datasource_id).ping()
+                client = get_sync_redis(datasource_id)
+                client.ping()
                 ds.status = DS_STATUS_NORMAL
                 ds.last_sync_at = datetime.now()
-                ds.table_count = 0
+                ds.table_count = int(client.dbsize())
                 session.commit()
-                log.info("redis_datasource_ready")
-                return {"datasource_id": datasource_id, "status": "success", "table_count": 0}
+                log.info("redis_datasource_ready", keys=ds.table_count)
+                return {"datasource_id": datasource_id, "status": "success", "table_count": ds.table_count}
             except Exception as exc:  # noqa: BLE001
                 log.exception("redis_datasource_ping_failed")
                 ds.status = DS_STATUS_ERROR

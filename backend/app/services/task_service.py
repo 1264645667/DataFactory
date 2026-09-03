@@ -410,6 +410,20 @@ async def get_task_detail(
         f"{'Redis' if t_type == 'redis' else 'MySQL'}:{tname}({int(rows)}条)"
         for t_type, tname, rows in rb_targets_result.all()
     ]
+    # 表 → 数据源名映射（跨数据源 Case：批次日志展示表所属数据源）
+    table_ds_names: dict[str, str] = {task.main_table: task.datasource_name}
+    try:
+        snapshot = json.loads(task.case_snapshot or "{}")
+        table_ds = snapshot.get("table_datasources") or {}
+        if table_ds:
+            from app.models.datasource import Datasource
+            ds_ids = {int(v) for v in table_ds.values()}
+            ds_result = await db.execute(select(Datasource.id, Datasource.name).where(Datasource.id.in_(ds_ids)))
+            id_name = {row[0]: row[1] for row in ds_result.all()}
+            for table, ds_id in table_ds.items():
+                table_ds_names[table] = id_name.get(int(ds_id), f"DS#{ds_id}")
+    except Exception:
+        logger.warning("task_detail_table_ds_parse_failed", task_no=task_no)
     return TaskDetailResponse(
         task_no=task.task_no,
         case_id=task.case_id,
@@ -428,6 +442,7 @@ async def get_task_detail(
         rolled_back_at=task.rolled_back_at,
         rollback_rows=int(rb_rows or 0),
         rollback_targets=rollback_targets,
+        table_ds_names=table_ds_names,
         start_at=task.start_at,
         finish_at=task.finish_at,
         duration_ms=task.duration_ms,

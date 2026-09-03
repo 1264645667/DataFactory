@@ -12,6 +12,7 @@ __all__ = [
     "AiApiKey",
     "AuditLog",
     "Case",
+    "CaseFolder",
     "ColumnCache",
     "Datasource",
     "ExecBatchLog",

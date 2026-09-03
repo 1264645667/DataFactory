@@ -2,11 +2,30 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Index, Integer, String, func
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, TINYINT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class CaseFolder(Base):
+    """Case 文件夹（收纳分类，按分组隔离，平铺不嵌套）。"""
+
+    __tablename__ = "df_case_folder"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, comment="文件夹名称")
+    group_type: Mapped[int] = mapped_column(TINYINT, nullable=False)
+    created_by: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("group_type", "name", name="uk_group_name"),
+        {"comment": "Case 文件夹", "mysql_charset": "utf8mb4", "mysql_engine": "InnoDB"},
+    )
 
 
 class Case(Base):
@@ -21,6 +40,9 @@ class Case(Base):
     datasource_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     datasource_name: Mapped[str] = mapped_column(
         String(100), nullable=False, comment="冗余，防数据源改名后显示异常"
+    )
+    folder_id: Mapped[int | None] = mapped_column(
+        BigInteger, comment="所属文件夹（NULL=未分类）"
     )
     main_table: Mapped[str] = mapped_column(
         String(200), nullable=False, comment="主操作表"
@@ -59,5 +81,7 @@ class Case(Base):
         Index("idx_main_table", "datasource_id", "main_table"),
         # 补充索引：列表页按创建时间倒序 + 分组过滤
         Index("idx_group_created_at", "group_type", "is_deleted", "created_at"),
+        # 文件夹过滤
+        Index("idx_group_folder", "group_type", "folder_id"),
         {"comment": "造数Case表", "mysql_charset": "utf8mb4", "mysql_engine": "InnoDB"},
     )

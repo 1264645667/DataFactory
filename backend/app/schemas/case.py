@@ -108,3 +108,36 @@ class CaseBatchExecuteRequest(BaseModel):
 
 class CaseBatchExecuteResponse(BaseModel):
     task_nos: list[str]
+
+
+# ── Case 文件夹 ──────────────────────────────────────────────
+
+
+class FolderItem(BaseModel):
+    """Case 文件夹项（含收纳数）。"""
+
+    id: int
+    name: str
+    case_count: int = 0
+    created_at: datetime
+
+
+class FolderListResponse(BaseModel):
+    """文件夹列表响应（含全部/未分类计数）。"""
+
+    folders: list[FolderItem]
+    total_count: int
+    unfiled_count: int
+
+
+class FolderSaveRequest(BaseModel):
+    """新建/重命名文件夹。"""
+
+    name: str = Field(min_length=1, max_length=50)
+
+
+class CaseBatchMoveRequest(BaseModel):
+    """批量移动到文件夹（folder_id 为空 = 移到未分类）。"""
+
+    case_ids: list[int] = Field(min_length=1)
+    folder_id: int | None = None

@@ -556,7 +556,21 @@ const detailLoading = ref(false)
 const detail = ref<TaskDetailData | null>(null)
 
 const batchColumns: DataTableColumns<BatchLog> = [
-  { title: '批次号', key: 'batch_no', width: 80 },
+  {
+    title: '目标表',
+    key: 'table_name',
+    ellipsis: { tooltip: true },
+    // 跨数据源 Case：非主数据源的表带 @数据源 后缀（主数据源表保持简洁）
+    render: (r) => {
+      const dsName = detail.value?.table_ds_names?.[r.table_name]
+      const isForeign = dsName && dsName !== detail.value?.datasource_name
+      return h('span', null, [
+        r.table_name,
+        isForeign ? h('span', { style: 'color:#f59e0b;font-size:11px;margin-left:4px' }, `@${dsName}`) : null,
+      ])
+    },
+  },
+  { title: '批次号', key: 'batch_no', width: 70 },
   { title: '批次大小', key: 'batch_size', width: 100, render: (r) => formatNumber(r.batch_size) },
   {
     title: '状态',

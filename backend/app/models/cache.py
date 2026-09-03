@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import TINYINT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,7 @@ class TableCache(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     datasource_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     table_name: Mapped[str] = mapped_column(String(200), nullable=False, comment="表名")
-    table_comment: Mapped[str | None] = mapped_column(String(500), comment="表备注")
+    table_comment: Mapped[str | None] = mapped_column(Text, comment="表备注")
     table_rows: Mapped[int | None] = mapped_column(
         BigInteger, default=0, comment="估算行数(information_schema)"
     )
@@ -54,7 +54,7 @@ class ColumnCache(Base):
     datasource_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     table_name: Mapped[str] = mapped_column(String(200), nullable=False)
     column_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    column_comment: Mapped[str | None] = mapped_column(String(500), comment="字段备注")
+    column_comment: Mapped[str | None] = mapped_column(Text, comment="字段备注")
     data_type: Mapped[str] = mapped_column(
         String(100), nullable=False, comment="基础类型: varchar/int/datetime等"
     )
@@ -99,7 +99,7 @@ class IndexCache(Base):
     is_unique: Mapped[int] = mapped_column(TINYINT, nullable=False, default=0)
     is_primary: Mapped[int] = mapped_column(TINYINT, nullable=False, default=0)
     column_names: Mapped[str] = mapped_column(
-        String(500), nullable=False, comment="JSON数组，字段名列表"
+        Text, nullable=False, comment="JSON数组，字段名列表"
     )
     seq_in_index: Mapped[int | None] = mapped_column(Integer, comment="联合索引中的位置")
     synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

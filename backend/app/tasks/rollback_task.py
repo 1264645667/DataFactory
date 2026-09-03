@@ -132,7 +132,7 @@ def rollback_exec_task(self, task_id: int, operator_id: int) -> dict:
                     title="任务回滚完成",
                     content=f"Case「{task.case_name}」任务 {task.task_no} 已回滚，"
                             f"共删除 {total_deleted:,} 条数据。",
-                    link_url=f"/tasks/{task.task_no}", priority=3, group_type=task.group_type,
+                    link_url=f"/overview?task_no={task.task_no}", priority=3, group_type=task.group_type,
                 )
             session.commit()
         except Exception:  # noqa: BLE001

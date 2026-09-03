@@ -108,7 +108,7 @@ def _notify_scene_result(result: dict, scene_exec_id: int) -> None:
             msg_type=msg_type,
             title=title,
             content=content,
-            link_url=f"/scenes/exec/{scene_exec.scene_exec_no}",
+            link_url=f"/scenes/{scene_exec.scene_id}",
             priority=priority,
             group_type=scene_exec.group_type,
         )

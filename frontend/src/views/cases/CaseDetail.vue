@@ -56,6 +56,7 @@
             v-if="config.associations.length > 0"
             :main-table="config.main_table"
             :associations="config.associations"
+            :table-ds="tableDsNames"
           />
           <EmptyState v-else description="该 Case 没有配置字段关联" :size="70" />
           <!-- 跨数据源映射 -->
@@ -147,6 +148,12 @@ const relatedTables = computed(() => [...new Set(config.value.associations.map((
 const isRedisCase = computed(() => (config.value.case_type ?? 'mysql') === 'redis')
 /** 跨数据源映射条目 */
 const tableDsEntries = computed(() => Object.entries(config.value.table_datasources ?? {}))
+/** 表名 → 数据源名（传给关联图：外来表节点显示 @数据源） */
+const tableDsNames = computed(() => {
+  const map: Record<string, string> = {}
+  for (const [table, dsId] of tableDsEntries.value) map[table] = dsNameOf(dsId)
+  return map
+})
 
 /** 数据源名称展示 */
 function dsNameOf(id: number): string {

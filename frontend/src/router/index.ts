@@ -105,6 +105,11 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '消息通知' },
       },
       {
+        // 兼容历史通知里的旧链接 /tasks/{task_no} → 总览页任务详情抽屉
+        path: 'tasks/:task_no',
+        redirect: (to) => ({ path: '/overview', query: { task_no: String(to.params.task_no) } }),
+      },
+      {
         path: '403',
         name: 'Forbidden',
         component: () => import('@/views/error/Forbidden.vue'),

@@ -194,7 +194,7 @@ def _notify_exec_result(result: dict, task_id: int) -> None:
             msg_type=msg_type,
             title=title,
             content=content,
-            link_url=f"/tasks/{task.task_no}",
+            link_url=f"/overview?task_no={task.task_no}",
             priority=priority,
             group_type=task.group_type,
         )

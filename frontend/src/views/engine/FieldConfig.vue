@@ -68,11 +68,14 @@
           @update:value="switchTable"
         >
           <n-tab v-for="t in tableTabs" :key="t" :name="t">
-            <n-tooltip placement="top" :disabled="t.length <= 28">
+            <n-tooltip placement="top" :disabled="t.length <= 28 && !tableDsNames[t]">
               <template #trigger>
-                <span class="tab-label">{{ t === tableName ? `${truncateName(t)}（主表）` : truncateName(t) }}</span>
+                <span class="tab-label">
+                  <span v-if="tableDsNames[t]" class="foreign-dot" />
+                  {{ t === tableName ? `${truncateName(t)}（主表）` : truncateName(t) }}
+                </span>
               </template>
-              {{ t }}
+              {{ t }}{{ tableDsNames[t] ? `（数据源：${tableDsNames[t]}）` : '' }}
             </n-tooltip>
           </n-tab>
         </n-tabs>
@@ -194,7 +197,7 @@
         <!-- 关联链路实时预览（多级关联拓扑图） -->
         <div v-if="associations.length > 0" class="assoc-graph-preview">
           <h4 class="assoc-add-title">关联链路预览</h4>
-          <AssocGraph :main-table="tableName" :associations="associations" />
+          <AssocGraph :main-table="tableName" :associations="associations" :table-ds="tableDsNames" />
         </div>
         <!-- 添加关联（支持多级：源表可以是主表或任一已关联的表） -->
         <div class="assoc-add">
@@ -255,7 +258,7 @@
     </n-drawer>
 
     <!-- Redis 联动抽屉：MySQL 造数成功后按模板同步写 Redis -->
-    <n-drawer v-model:show="redisSyncDrawerShow" :width="560" placement="right">
+    <n-drawer v-model:show="redisSyncDrawerShow" :width="660" placement="right">
       <n-drawer-content title="Redis 联动（造数同步写 Redis）" closable>
         <p class="dim assoc-tip">
           每个 MySQL 批次写入成功后，按模板把生成的字段值同步写入 Redis。
@@ -271,6 +274,9 @@
             <div class="dim redis-sync-desc">
               {{ s.write_mode === 'per_row' ? '每行一个Key' : '聚合单Key' }} · {{ s.data_type }} ·
               {{ s.key_template }}<template v-if="s.ttl_seconds"> · TTL {{ s.ttl_seconds }}s</template>
+              <template v-if="s.field_mapping && Object.keys(s.field_mapping).length">
+                <br />映射：{{ Object.entries(s.field_mapping).map(([a, r]) => `${a}←${typeof r === 'string' ? r : `策略:${r.strategy}`}`).join('，') }}
+              </template>
             </div>
             <n-button text size="tiny" type="error" @click="removeRedisSync(i)">删除</n-button>
           </div>
@@ -310,6 +316,30 @@
                 :placeholder="syncForm.writeMode === 'per_row' ? '如 user:{tax_change.id} 或 user:{incr}' : '如 case:{task_no}:users'"
               />
             </n-form-item>
+            <!-- Key 占位符解析：未解析的可现场选择来源字段（写入映射，Key 模板同样可用别名） -->
+            <div v-if="syncKeyRefs.length > 0" class="key-refs-block">
+              <div class="key-refs">
+                <n-tag
+                  v-for="r in syncKeyRefs"
+                  :key="r.token"
+                  size="small"
+                  :type="r.type === 'missing' ? 'error' : r.type === 'builtin' ? 'info' : 'success'"
+                >{{ r.token }} · {{ r.label }}</n-tag>
+              </div>
+              <div v-for="r in syncKeyRefs.filter((x) => x.type === 'missing')" :key="r.token" class="mapping-row">
+                <n-tag size="small" type="error">{{ r.token }}</n-tag>
+                <span class="dim">←</span>
+                <n-select
+                  :value="keyMappingValue(r.token)"
+                  :options="syncFieldOptions"
+                  filterable
+                  size="small"
+                  placeholder="选择来源字段（表.字段）"
+                  class="mapping-select"
+                  @update:value="(v: string) => setKeyMapping(r.token, v)"
+                />
+              </div>
+            </div>
             <n-form-item label="参与字段（表.字段，可多选；不选=主表全部字段）">
               <n-select
                 v-model:value="syncForm.fields"
@@ -319,9 +349,55 @@
                 placeholder="选择参与 value 组装的字段"
               />
             </n-form-item>
-            <n-form-item label="value 模板（可选，覆盖默认组装；如 {&quot;name&quot;:&quot;{user.name}&quot;}）">
-              <n-input v-model:value="syncForm.valueTemplate" type="textarea" :rows="2" placeholder="留空按数据类型默认组装" />
+            <n-form-item label="value 模板（可选，覆盖默认组装）">
+              <n-input v-model:value="syncForm.valueTemplate" type="textarea" :rows="3" placeholder='留空按数据类型默认组装；支持 {"name":"{name}"} 占位符' />
             </n-form-item>
+            <div class="tpl-actions">
+              <n-button size="tiny" type="primary" secondary @click="parseSyncTemplate">解析 JSON 模板生成映射</n-button>
+              <span class="dim">粘贴业务 JSON，自动提取字段并生成「模板键 → 表.字段」映射</span>
+            </div>
+            <!-- 模板键 → 来源（表字段 或 造数策略）映射（解析 JSON 模板后生成） -->
+            <div v-if="syncForm.mapping.length > 0" class="mapping-block">
+              <div class="mapping-head">
+                <span>模板字段映射</span>
+                <span class="dim">来源可选表字段或造数策略，未配置的键渲染为空串</span>
+              </div>
+              <div v-for="m in syncForm.mapping" :key="m.alias" class="mapping-row">
+                <n-tag size="small" type="info" class="mapping-alias" :title="m.alias">{{ m.alias }}</n-tag>
+                <span class="dim">←</span>
+                <n-radio-group v-model:value="m.mode" size="tiny" class="mapping-mode">
+                  <n-radio-button value="ref">表字段</n-radio-button>
+                  <n-radio-button value="strategy">造数策略</n-radio-button>
+                </n-radio-group>
+                <n-select
+                  v-if="m.mode === 'ref'"
+                  v-model:value="m.ref"
+                  :options="syncFieldOptions"
+                  :render-label="renderFieldOption"
+                  filterable
+                  size="small"
+                  placeholder="选择来源字段（表.字段）"
+                  class="mapping-select"
+                />
+                <template v-else>
+                  <n-select
+                    v-model:value="m.strategy"
+                    :options="mappingStrategyOptions"
+                    size="small"
+                    style="width: 132px; flex-shrink: 0"
+                    @update:value="m.params = {}"
+                  />
+                  <div class="mapping-params">
+                    <StrategyParams
+                      :strategy="m.strategy"
+                      :column="syntheticSyncColumn(m.alias)"
+                      :sibling-columns="[]"
+                      v-model="m.params"
+                    />
+                  </div>
+                </template>
+              </div>
+            </div>
             <div class="redis-form-row">
               <n-form-item v-if="syncForm.dataType === 'zset'" label="分数字段（表.字段）" class="redis-form-col">
                 <n-select v-model:value="syncForm.scoreField" :options="syncFieldOptions" filterable />
@@ -364,7 +440,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch, type VNode } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowBackOutline, CheckmarkOutline, CloseOutline, SearchOutline } from '@vicons/ionicons5'
 import { engineApi } from '@/api/engine'
@@ -387,6 +463,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import { useDatasourceStore } from '@/stores/datasource'
 import { formatNumber, formatDateTime } from '@/utils/formatter'
+import { parseJsonTemplate, BUILTIN_TOKEN, type ParsedTemplate } from '@/utils/jsonTemplate'
 import {
   columnTypeColor,
   getStrategyOptions,
@@ -449,6 +526,12 @@ const redisDatasourceOptions = computed(() =>
     .filter((d) => (d.db_type || '').toLowerCase() === 'redis')
     .map((d) => ({ label: `${d.name}（db${d.database_name}）`, value: d.id })),
 )
+/** 表名 → 数据源名（跨数据源关联图/Tab 标记用） */
+const tableDsNames = computed(() => {
+  const map: Record<string, string> = {}
+  for (const [table, dsId] of Object.entries(tableDatasources.value)) map[table] = dsNameOf(dsId)
+  return map
+})
 
 // ---------------- 关联表字段配置（related_field_configs） ----------------
 /** 当前展示的表（主表或某个关联表） */
@@ -910,6 +993,14 @@ const syncForm = reactive({
   valueTemplate: '',
   scoreField: null as string | null,
   ttlSeconds: 0,
+  /** 模板键 → 来源 映射（解析 JSON 模板生成；mode=ref 取表字段，mode=strategy 用造数策略生成） */
+  mapping: [] as Array<{
+    alias: string
+    mode: 'ref' | 'strategy'
+    ref: string | null
+    strategy: StrategyCode
+    params: Record<string, unknown>
+  }>,
 })
 
 const redisDataTypeOptions = computed(() => {
@@ -942,6 +1033,89 @@ const syncFieldOptions = computed(() => {
   return options
 })
 
+/** 联动 Key 模板占位符解析状态：内置/表字段/映射别名/未解析 */
+const syncKeyRefs = computed(() => {
+  const refs: Array<{ token: string; label: string; type: 'builtin' | 'field' | 'alias' | 'missing' }> = []
+  for (const m of syncForm.keyTemplate.matchAll(/\{([^{}]+)\}/g)) {
+    const token = m[1].trim()
+    if (BUILTIN_TOKEN.test(token)) {
+      refs.push({ token, label: '内置占位符', type: 'builtin' })
+    } else if (syncFieldOptions.value.some((o) => o.value === token)) {
+      refs.push({ token, label: '表字段', type: 'field' })
+    } else if (syncForm.mapping.some((mm) => mm.alias === token)) {
+      refs.push({ token, label: '映射别名', type: 'alias' })
+    } else {
+      refs.push({ token, label: '未解析', type: 'missing' })
+    }
+  }
+  return refs
+})
+
+/** Key 占位符的映射值（已配置的映射） */
+function keyMappingValue(token: string): string | null {
+  return syncForm.mapping.find((m) => m.alias === token)?.ref ?? null
+}
+
+/** 设置 Key 占位符的来源字段映射（Key/value 模板共用 field_mapping） */
+function setKeyMapping(alias: string, ref: string): void {
+  const existing = syncForm.mapping.find((m) => m.alias === alias)
+  if (existing) existing.ref = ref
+  else syncForm.mapping.push({ alias, mode: 'ref', ref, strategy: 'CUSTOM_VALUE', params: {} })
+}
+
+/** 联动字段下拉的自定义渲染：第一行列名（亮色），第二行表名（暗色），解决表名长时看不到列名 */
+function renderFieldOption(option: { label?: unknown }): VNode {
+  const label = String(option.label ?? '')
+  const dot = label.indexOf('.')
+  const table = dot > 0 ? label.slice(0, dot) : ''
+  const colWithType = dot > 0 ? label.slice(dot + 1) : label
+  return h('div', { class: 'field-opt', title: label }, [
+    h('div', { class: 'field-opt-col' }, colWithType),
+    h('div', { class: 'field-opt-table' }, table),
+  ])
+}
+
+/** 映射行的造数策略选项（不支持依赖表数据/自增主键类策略） */
+const mappingStrategyOptions = computed(() =>
+  getStrategyOptions({ data_type: 'varchar', column_type: 'varchar(255)' } as ColumnInfo)
+    .filter((o) => !['SKIP', 'ITERATE_LIST', 'DERIVED'].includes(o.value)),
+)
+
+/** 联动映射策略编辑用的合成列信息（varchar 兜底） */
+function syntheticSyncColumn(name: string): ColumnInfo {
+  return {
+    column_name: name,
+    column_comment: null,
+    data_type: 'varchar',
+    column_type: 'varchar(255)',
+    is_nullable: 1,
+    is_primary_key: 0,
+    is_unique: 0,
+    char_max_length: 255,
+    column_default: null,
+    extra: null,
+  }
+}
+
+/** 按列名自动匹配来源字段（同名/snake_case，唯一候选才自动映射） */
+function autoMatchRef(alias: string): string | null {
+  const snake = (s: string) => s.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`)
+  const candidates = syncFieldOptions.value.filter((o) => {
+    const col = o.value.slice(o.value.lastIndexOf('.') + 1).toLowerCase()
+    return col === alias.toLowerCase() || col === snake(alias).toLowerCase()
+  })
+  return candidates.length === 1 ? candidates[0].value : null
+}
+
+// Key 模板变化时：未解析的占位符若能唯一匹配列名则自动建立映射
+watch(() => syncForm.keyTemplate, () => {
+  for (const r of syncKeyRefs.value) {
+    if (r.type !== 'missing') continue
+    const hit = autoMatchRef(r.token)
+    if (hit) setKeyMapping(r.token, hit)
+  }
+})
+
 /** 打开联动抽屉：确保全部关联表字段已加载（联动可选关联表字段） */
 async function openRedisSyncDrawer(): Promise<void> {
   redisSyncDrawerShow.value = true
@@ -950,6 +1124,33 @@ async function openRedisSyncDrawer(): Promise<void> {
       await loadRelatedTableRows(table)
     }
   }
+}
+
+/** 解析 value 模板中的业务 JSON：生成 {别名} 占位符模板 + 字段映射行（按列名自动匹配来源字段） */
+function parseSyncTemplate(): void {
+  const raw = syncForm.valueTemplate.trim()
+  if (!raw) {
+    window.$message.warning('请先在 value 模板中粘贴业务 JSON')
+    return
+  }
+  let parsed: ParsedTemplate
+  try {
+    parsed = parseJsonTemplate(raw)
+  } catch (e) {
+    window.$message.error(`JSON 解析失败：${(e as Error).message}`)
+    return
+  }
+  if (!parsed.fields.length) {
+    window.$message.warning('模板中没有可识别的标量字段')
+    return
+  }
+  // 自动匹配：列名与模板键同名（忽略大小写）或 snake_case 转换后同名
+  syncForm.valueTemplate = parsed.template
+  syncForm.mapping = parsed.fields.map((f) => ({
+    alias: f.name, mode: 'ref', ref: autoMatchRef(f.name), strategy: 'CUSTOM_VALUE', params: {},
+  }))
+  const matched = syncForm.mapping.filter((m) => m.ref).length
+  window.$message.success(`已识别 ${parsed.fields.length} 个字段，自动匹配 ${matched} 个来源字段`)
 }
 
 function addRedisSync(): void {
@@ -969,6 +1170,32 @@ function addRedisSync(): void {
       return
     }
   }
+  // 模板映射校验：表字段模式必须有来源；策略模式校验策略参数
+  for (const m of syncForm.mapping) {
+    if (m.mode === 'ref' && !m.ref) {
+      window.$message.error(`模板键 ${m.alias} 未选择来源字段`)
+      return
+    }
+    if (m.mode === 'strategy') {
+      const err = validateStrategyParams(syntheticSyncColumn(m.alias), m.strategy, m.params)
+      if (err) {
+        window.$message.error(`模板键 ${m.alias}：${err}`)
+        return
+      }
+    }
+  }
+  // Key 模板未解析占位符拦截
+  const missingRefs = syncKeyRefs.value.filter((r) => r.type === 'missing').map((r) => r.token)
+  if (missingRefs.length) {
+    window.$message.error(`Key 模板占位符未解析：${missingRefs.join('、')}（应为 表.字段 / 映射别名 / 内置占位符）`)
+    return
+  }
+  const fieldMapping: Record<string, string | { strategy: string; strategy_params: Record<string, unknown> }> = {}
+  for (const m of syncForm.mapping) {
+    fieldMapping[m.alias] = m.mode === 'ref'
+      ? m.ref!
+      : { strategy: m.strategy, strategy_params: m.params }
+  }
   redisSyncs.value.push({
     name: syncForm.name.trim() || null,
     datasource_id: syncForm.datasourceId,
@@ -976,6 +1203,7 @@ function addRedisSync(): void {
     write_mode: syncForm.writeMode,
     data_type: syncForm.dataType,
     fields: [...syncForm.fields],
+    field_mapping: fieldMapping,
     value_template: syncForm.valueTemplate.trim() || null,
     score_field: syncForm.scoreField,
     ttl_seconds: syncForm.ttlSeconds || 0,
@@ -986,6 +1214,7 @@ function addRedisSync(): void {
   syncForm.fields = []
   syncForm.valueTemplate = ''
   syncForm.scoreField = null
+  syncForm.mapping = []
   window.$message.success('联动已添加')
 }
 
@@ -1182,6 +1411,16 @@ onMounted(async () => {
   white-space: nowrap;
   vertical-align: middle;
 }
+/* 外来表（跨数据源）Tab 前置琥珀色圆点 */
+.foreign-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  margin-right: 4px;
+  vertical-align: middle;
+}
 .field-toolbar {
   display: flex;
   justify-content: space-between;
@@ -1295,6 +1534,64 @@ onMounted(async () => {
   flex: 1;
   min-width: 0;
 }
+.tpl-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.key-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.key-refs-block {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.mapping-block {
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.mapping-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #a78bfa;
+}
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.mapping-alias {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.mapping-select {
+  flex: 1;
+  min-width: 0;
+}
+.mapping-mode {
+  flex-shrink: 0;
+}
+.mapping-params {
+  flex: 1;
+  min-width: 0;
+}
 .assoc-item :deep(.n-button) {
   position: absolute;
   right: 8px;
@@ -1321,5 +1618,27 @@ onMounted(async () => {
 }
 .mb-3 {
   margin-bottom: 12px;
+}
+</style>
+
+<!-- 下拉选项两行样式：渲染在 body 下的浮层里，不能用 scoped -->
+<style>
+.field-opt {
+  line-height: 1.3;
+  padding: 2px 0;
+}
+.field-opt-col {
+  color: #e2e8f0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.field-opt-table {
+  color: #64748b;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
