@@ -13,11 +13,12 @@
           v-for="c in filteredCases"
           :key="c.id"
           class="case-card"
+          @mousedown.prevent
           @pointerdown="onCardPointerDown($event, c)"
         >
-          <div class="case-card-name">{{ c.case_name }}</div>
-          <div class="case-card-meta">主表：{{ c.main_table }}</div>
-          <div class="case-card-meta">数据源：{{ c.datasource_name }}</div>
+          <div class="case-card-name" :title="c.case_name">{{ c.case_name }}</div>
+          <div class="case-card-meta" :title="c.main_table">主表：{{ c.main_table }}</div>
+          <div class="case-card-meta" :title="c.datasource_name">数据源：{{ c.datasource_name }}</div>
         </div>
         <EmptyState v-if="filteredCases.length === 0" description="没有可用的 Case" :size="64" />
       </n-scrollbar>
@@ -83,8 +84,8 @@
   <!-- 拖拽跟随预览（Pointer Events 方案，绕开 Chrome 144+ HTML5 DnD 回归 bug） -->
   <Teleport to="body">
     <div v-if="dragGhost" class="drag-ghost" :style="{ left: dragGhost.x + 'px', top: dragGhost.y + 'px' }">
-      <div class="case-card-name">{{ dragGhost.case_name }}</div>
-      <div class="case-card-meta">主表：{{ dragGhost.main_table }}</div>
+      <div class="case-card-name" :title="dragGhost.case_name">{{ dragGhost.case_name }}</div>
+      <div class="case-card-meta" :title="dragGhost.main_table">主表：{{ dragGhost.main_table }}</div>
     </div>
   </Teleport>
 </template>
@@ -452,6 +453,9 @@ onMounted(async () => {
   cursor: grab;
   background: rgba(124, 58, 237, 0.06);
   transition: border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 .case-card:hover {
   border-color: rgba(124, 58, 237, 0.7);
@@ -464,10 +468,16 @@ onMounted(async () => {
   font-weight: 600;
   color: #e2e8f0;
   margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .case-card-meta {
   font-size: 11px;
   color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .panel-tip {
   font-size: 11px;

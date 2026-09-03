@@ -85,6 +85,13 @@ function update(key: string, value: unknown): void {
   font-size: 12px;
   color: #e2e8f0;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* 输入框内恢复可选中 */
+.scene-node :deep(input) {
+  user-select: text;
+  -webkit-user-select: text;
 }
 .node-head {
   display: flex;
