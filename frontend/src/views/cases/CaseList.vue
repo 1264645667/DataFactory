@@ -356,7 +356,6 @@ const columns: DataTableColumns<CaseItem> = [
     title: '操作',
     key: 'actions',
     width: 210,
-    fixed: 'right',
     render: (row) => {
       const btns = []
       if (hasPermission('CASE:EXECUTE')) {
