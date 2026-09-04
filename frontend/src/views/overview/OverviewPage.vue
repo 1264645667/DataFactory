@@ -107,10 +107,12 @@
       <!-- 表格（首次加载骨架屏，刷新时 spin 遮罩） -->
       <n-skeleton v-if="recordsFirstLoading" :repeat="5" height="42px" style="margin-top: 12px" />
       <n-spin v-else :show="recordsLoading">
+        <!-- 列总宽 1460px，窗口较窄时表格内部横向滚动，避免操作列被裁切 -->
         <n-data-table
           :columns="recordColumns"
           :data="records"
           :pagination="false"
+          :scroll-x="1460"
           size="small"
           class="records-table"
         />
@@ -192,7 +194,7 @@
 
     <!-- Top10 下钻弹窗 -->
     <n-modal v-model:show="drillShow" preset="card" title="该表相关执行记录" style="width: 860px; max-width: 94vw">
-      <n-data-table :columns="recordColumns" :data="drillRecords" size="small" :pagination="{ pageSize: 8 }" />
+      <n-data-table :columns="recordColumns" :data="drillRecords" size="small" :pagination="{ pageSize: 8 }" :scroll-x="1460" />
     </n-modal>
   </div>
 </template>

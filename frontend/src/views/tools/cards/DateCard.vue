@@ -47,7 +47,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip" title="点击复制" @click="copyItem(String(item))">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -58,7 +58,7 @@ import { computed, ref, watch } from 'vue'
 import { toolsApi } from '@/api/tools'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
-import { formatDate } from '@/utils/formatter'
+import { copyItem, formatDate } from '@/utils/formatter'
 
 const today = Date.now()
 const dateRange = ref<[number, number]>([today - 30 * 86400000, today])

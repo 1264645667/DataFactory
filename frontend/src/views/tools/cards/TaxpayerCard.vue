@@ -28,7 +28,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip" title="点击复制" @click="copyItem(item)">{{ item }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -39,6 +39,7 @@ import { computed } from 'vue'
 import { toolsApi } from '@/api/tools'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
+import { copyItem } from '@/utils/formatter'
 
 const { params, items, loading, generate, refill } = useApiTool(
   { taxpayer_type: 'enterprise', count: 10 },

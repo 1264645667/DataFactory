@@ -47,6 +47,7 @@
 import { computed, ref, watch } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { toolsApi } from '@/api/tools'
+import { copyItem } from '@/utils/formatter'
 import type { IdCardItem } from '@/api/types'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
@@ -74,6 +75,11 @@ const columns: DataTableColumns<IdCardItem> = [
   { title: '性别', key: 'gender', width: 60 },
   { title: '校验位', key: 'check_digit', width: 70, render: (r) => r.check_digit ?? '✓' },
 ]
+
+/** 点击行复制该条身份证号 */
+function rowProps(row: IdCardItem): { style: string; title: string; onClick: () => void } {
+  return { style: 'cursor:pointer', title: '点击复制身份证号', onClick: () => copyItem(row.id_card) }
+}
 
 const copyContent = computed(() => items.value.map((i) => i.id_card).join('\n'))
 const exportData = computed(() => ({

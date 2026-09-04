@@ -17,7 +17,7 @@
     <template #params>
       <div class="param-row">
         <span class="param-label">格式</span>
-        <n-radio-group v-model:value="params.fmt" size="small">
+        <n-radio-group v-model:value="params.fmt" size="small" class="wrap-radio">
           <n-radio-button value="hyphen">含连字符·小写</n-radio-button>
           <n-radio-button value="plain">无连字符·小写</n-radio-button>
           <n-radio-button value="upper">含连字符·大写</n-radio-button>

@@ -118,21 +118,41 @@ def infer_strategy(col) -> tuple[str, dict]:
     # 9. 逻辑删除标记 → 0
     if name in ("is_deleted", "is_del", "del_flag"):
         return "CUSTOM_VALUE", {"value": 0}
-    # 10. 手机号字段 → 随机 11 位
-    if any(k in name for k in ("phone", "mobile", "tel")) and char_len in (11, 13):
-        return "RANDOM_FIXED_LEN", {"length": 11}
-    # 11. 身份证字段 → 随机 18 位
-    if any(k in name for k in ("id_card", "identity", "id_no")) and char_len == 18:
-        return "RANDOM_FIXED_LEN", {"length": 18}
-    # 12. 枚举状态字段 → 从列表选取（预填 0/1）
-    if any(k in name for k in ("status", "state", "type", "flag")) and data_type == "tinyint":
+    # 10. uuid/guid 字符字段 → UUID
+    if data_type in _CHAR_TYPES and any(k in name for k in ("uuid", "guid")) and (char_len or 32) >= 32:
+        return "UUID", {}
+    # 11. 快捷工具适配字段（字段名识别 + 长度足够才启用，否则回落后续规则）
+    if data_type in _CHAR_TYPES:
+        if any(k in name for k in ("phone", "mobile", "tel")) and (char_len or 0) >= 11:
+            return "TOOL_GEN", {"tool": "phone"}
+        if any(k in name for k in ("id_card", "identity", "id_no")) and (char_len or 0) >= 18:
+            return "TOOL_GEN", {"tool": "idcard"}
+        if (char_len or 0) >= 4 and (
+            name in ("name", "real_name", "contact", "contact_name", "person_name", "customer_name")
+            or (name.endswith("_name") and name not in ("user_name", "username", "file_name"))
+        ):
+            return "TOOL_GEN", {"tool": "name"}
+        if any(k in name for k in ("address", "addr")) and (char_len or 0) >= 20:
+            return "TOOL_GEN", {"tool": "address"}
+        if any(k in name for k in ("bank_card", "bankcard")) and (char_len or 0) >= 16:
+            return "TOOL_GEN", {"tool": "bankcard"}
+        if "credit_code" in name and (char_len or 0) >= 18:
+            return "TOOL_GEN", {"tool": "credit_code"}
+        if "taxpayer" in name and (char_len or 0) >= 18:
+            return "TOOL_GEN", {"tool": "taxpayer_id"}
+    # 12. 枚举状态字段 → 从列表选取（预填 0/1；tinyint / char(1) 均适用）
+    if any(k in name for k in ("status", "state", "type", "flag")) and (
+        data_type == "tinyint" or (data_type in ("char", "varchar") and char_len == 1)
+    ):
         return "PICK_FROM_LIST", {"values": [0, 1]}
     # 13/14. 时间/日期字段 → NOW
     if data_type in ("datetime", "timestamp", "date"):
         return "NOW", {}
-    # 15. 有默认值 → 使用默认值（表达式默认值不字面注入）
+    # 15. 有默认值 → 使用默认值（表达式默认值不字面注入；空串默认值等同空值入库，回落随机）
     if col.column_default is not None:
         default_value = str(col.column_default)
+        if default_value == "":
+            return "DEFAULT", {}
         if "(" in default_value or ")" in default_value:
             if data_type in ("datetime", "timestamp", "date"):
                 return "NOW", {}
