@@ -125,23 +125,37 @@ export function inferDefaultStrategy(column: ColumnInfo): { strategy: StrategyCo
   if (/^(deleted_at|delete_time)$/.test(name)) return { strategy: 'CUSTOM_VALUE', params: { value: null } }
   // 9. 逻辑删除标记
   if (/^(is_deleted|is_del|del_flag)$/.test(name)) return { strategy: 'CUSTOM_VALUE', params: { value: 0 } }
-  // 10. 手机号
-  if (/(phone|mobile|tel)/.test(name) && (maxLen === 11 || maxLen === 13)) {
-    return { strategy: 'RANDOM_FIXED_LEN', params: { length: 11 } }
+  // 10. uuid/guid 字符字段 → UUID
+  if (isCharType(dt) && /(uuid|guid)/.test(name) && (maxLen ?? 32) >= 32) {
+    return { strategy: 'UUID', params: {} }
   }
-  // 11. 身份证
-  if (/(id_card|identity|id_no)/.test(name) && maxLen === 18) {
-    return { strategy: 'RANDOM_FIXED_LEN', params: { length: 18 } }
+  // 11. 快捷工具适配字段（字段名识别 + 长度足够才启用，否则回落后续规则）
+  if (isCharType(dt)) {
+    if (/(phone|mobile|tel)/.test(name) && (maxLen ?? 0) >= 11) return { strategy: 'TOOL_GEN', params: { tool: 'phone' } }
+    if (/(id_card|identity|id_no)/.test(name) && (maxLen ?? 0) >= 18) return { strategy: 'TOOL_GEN', params: { tool: 'idcard' } }
+    if (
+      (maxLen ?? 0) >= 4 &&
+      (/^(name|real_name|contact|contact_name|person_name|customer_name)$/.test(name) ||
+        (/_name$/.test(name) && !/^(user_name|username|file_name)$/.test(name)))
+    ) {
+      return { strategy: 'TOOL_GEN', params: { tool: 'name' } }
+    }
+    if (/(address|addr)/.test(name) && (maxLen ?? 0) >= 20) return { strategy: 'TOOL_GEN', params: { tool: 'address' } }
+    if (/(bank_card|bankcard)/.test(name) && (maxLen ?? 0) >= 16) return { strategy: 'TOOL_GEN', params: { tool: 'bankcard' } }
+    if (/credit_code/.test(name) && (maxLen ?? 0) >= 18) return { strategy: 'TOOL_GEN', params: { tool: 'credit_code' } }
+    if (/taxpayer/.test(name) && (maxLen ?? 0) >= 18) return { strategy: 'TOOL_GEN', params: { tool: 'taxpayer_id' } }
   }
-  // 12. 枚举状态
-  if (/(status|state|type|flag)/.test(name) && dt === 'tinyint') {
+  // 12. 枚举状态（tinyint / char(1) 均适用）
+  if (/(status|state|type|flag)/.test(name) && (dt === 'tinyint' || isBoolType(column))) {
     return { strategy: 'PICK_FROM_LIST', params: { list: '0\n1' } }
   }
   // 13/14. 时间类
   if (isTimeType(dt)) return { strategy: 'NOW', params: {} }
-  // 15. 有默认值
-  if (column.column_default != null) return { strategy: 'CUSTOM_VALUE', params: { value: column.column_default } }
-  // 16. 兜底
+  // 15. 有默认值（空串默认值等同空值入库，回落随机）
+  if (column.column_default != null && column.column_default !== '') {
+    return { strategy: 'CUSTOM_VALUE', params: { value: column.column_default } }
+  }
+  // 16. 兜底随机，保证任何字段不产生空值入库
   return { strategy: 'DEFAULT', params: {} }
 }
 
@@ -171,7 +185,8 @@ export function validateStrategyParams(
     }
     case 'CUSTOM_VALUE': {
       const v = params.value
-      if (v == null || v === '') return null // 允许 NULL
+      // 空值合法（允许显式插入 NULL/空串）；非空字段的空值由保存时的软提示兜底
+      if (v == null || v === '') return null
       if (isNumType(column.data_type) && column.data_type !== 'decimal' && Number.isNaN(Number(v))) {
         return '该字段为数字类型，请输入数字'
       }

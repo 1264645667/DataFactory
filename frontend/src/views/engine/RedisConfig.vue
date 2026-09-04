@@ -243,7 +243,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import { parseJsonTemplate, extractFieldRefs, type ParsedTemplate } from '@/utils/jsonTemplate'
-import { getStrategyOptions, validateStrategyParams } from '@/utils/strategy'
+import { getStrategyOptions, inferDefaultStrategy, validateStrategyParams } from '@/utils/strategy'
 
 interface RedisFieldRow {
   name: string
@@ -405,12 +405,15 @@ function parseTemplateFields(): void {
 
   const applyParse = (): void => {
     form.valueTemplate = parsed.template
-    fieldRows.value = parsed.fields.map((f) => ({
-      name: f.name,
-      kind: f.kind,
-      strategy: 'CUSTOM_VALUE',
-      params: { value: f.value },
-    }))
+    fieldRows.value = parsed.fields.map((f) => {
+      // 模板值为空（null/''）时按字段名推断策略，避免空值入库；有值则保留自定义输入
+      if (f.value == null || f.value === '') {
+        const row: RedisFieldRow = { name: f.name, kind: f.kind, strategy: 'DEFAULT', params: {} }
+        const inferred = inferDefaultStrategy(syntheticColumn(row))
+        return { ...row, strategy: inferred.strategy, params: inferred.params }
+      }
+      return { name: f.name, kind: f.kind, strategy: 'CUSTOM_VALUE' as const, params: { value: f.value } }
+    })
     dirty.value = true
     window.$message.success(`已识别 ${parsed.fields.length} 个字段，可在下方逐个调整策略和值`)
   }

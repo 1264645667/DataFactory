@@ -235,6 +235,7 @@ class CustomValueStrategy(BaseStrategy):
     def validate(self, column_meta: dict, params: dict) -> None:
         if "value" not in params:
             raise ValueError("自定义值不能为空")
+        # 空值（NULL/空串）为合法显式配置；非空字段的空值由前端保存时软提示兜底
         convert_custom_value(column_meta, params.get("value"))
 
     def generate(self, column_meta: dict, params: dict, index: int) -> Any:

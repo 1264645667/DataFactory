@@ -1253,8 +1253,38 @@ const autoIncrementColumn = computed(() => {
 
 const defaultCaseName = computed(() => existingCaseName.value || `${tableName}_造数Case`)
 
-function openSaveModal(): void {
+/**
+ * 空值软提示：非空字段配置了空自定义值时弹确认框列出字段，确认后放行。
+ * 空值是合法场景（测试空串兼容等），只防手滑不堵死。
+ */
+function confirmEmptyCustomValues(): Promise<boolean> {
+  const allRows: Array<{ table: string; row: FieldRow }> = [
+    ...fieldRows.value.map((r) => ({ table: tableName, row: r })),
+    ...Object.entries(relatedFieldRows.value).flatMap(([t, rows]) => rows.map((r) => ({ table: t, row: r }))),
+  ]
+  const emptyOnes = allRows.filter(
+    ({ row }) =>
+      row.strategy === 'CUSTOM_VALUE' &&
+      !row.column.is_nullable &&
+      (row.params.value == null || row.params.value === ''),
+  )
+  if (!emptyOnes.length) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    window.$dialog.warning({
+      title: '空值写入确认',
+      content: `以下非空字段将以空值写入：${emptyOnes.map(({ table, row }) => `${table}.${row.column.column_name}`).join('、')}。确认继续？`,
+      positiveText: '确认写入空值',
+      negativeText: '返回修改',
+      onPositiveClick: () => resolve(true),
+      onNegativeClick: () => resolve(false),
+      onClose: () => resolve(false),
+    })
+  })
+}
+
+async function openSaveModal(): Promise<void> {
   if (!validateAll()) return
+  if (!(await confirmEmptyCustomValues())) return
   saveCaseName.value = defaultCaseName.value
   saveModalShow.value = true
 }
@@ -1289,8 +1319,9 @@ async function handleSaveOnly(): Promise<void> {
   }
 }
 
-function openExecuteModal(): void {
+async function openExecuteModal(): Promise<void> {
   if (!validateAll()) return
+  if (!(await confirmEmptyCustomValues())) return
   executeModalShow.value = true
 }
 
