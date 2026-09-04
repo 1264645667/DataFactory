@@ -406,6 +406,9 @@ function renderTop10(): void {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
+      // 超长表名（如 Redis key 模板）强制断行并限制在图表区内，避免 tooltip 溢出屏幕被裁
+      confine: true,
+      extraCssText: 'max-width: 340px; white-space: normal; word-break: break-all;',
       formatter: (params: unknown) => {
         const p = (params as Array<{ dataIndex: number }>)[0]
         const item = top10Data.value[p?.dataIndex ?? -1]
@@ -413,7 +416,7 @@ function renderTop10(): void {
         return `${item.table_name} <span style="color:#94a3b8">@${item.datasource_name}</span><br/>造数条数：${formatNumber(item.row_count)}<br/>关联 Case：${item.case_count}`
       },
     },
-    grid: { left: 140, right: 30, top: 20, bottom: 30 },
+    grid: { left: 152, right: 30, top: 20, bottom: 30 },
     xAxis: { type: 'value' },
     yAxis: {
       type: 'category',
