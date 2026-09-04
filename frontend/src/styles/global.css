@@ -243,3 +243,13 @@ body {
 .vue-flow__controls-button:hover {
   background: #23234a;
 }
+
+/* 工具卡片结果项：点击复制单条 */
+.result-chip, .result-line {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.result-chip:hover, .result-line:hover {
+  background: rgba(124, 58, 237, 0.18);
+  border-color: rgba(124, 58, 237, 0.5);
+}

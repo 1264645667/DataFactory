@@ -9,7 +9,7 @@
     :result-count="output ? 1 : 0"
   >
     <template #params>
-      <n-input v-model:value="input" type="textarea" :rows="6" placeholder="粘贴 JSON 文本" class="mono-area" />
+      <n-input v-model:value="input" type="textarea" :rows="6" :input-props="{ spellcheck: 'false' }" placeholder="粘贴 JSON 文本" class="mono-area" />
       <div class="btn-row">
         <n-button size="small" class="gradient-btn" @click="beautify">美化</n-button>
         <n-button size="small" @click="compress">压缩</n-button>

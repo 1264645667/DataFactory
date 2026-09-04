@@ -94,3 +94,13 @@ export async function copyText(text: string): Promise<boolean> {
     }
   }
 }
+
+/** 复制单条数据并弹出轻提示（工具卡片结果项点击复制用） */
+export async function copyItem(text: string): Promise<void> {
+  const ok = await copyText(text)
+  if (ok) {
+    window.$message.success(`已复制：${text.length > 40 ? text.slice(0, 40) + '…' : text}`)
+  } else {
+    window.$message.error('复制失败')
+  }
+}

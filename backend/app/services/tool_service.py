@@ -26,6 +26,30 @@ _PROVINCES: list[tuple[str, str]] = [
     ("65", "新疆维吾尔自治区"),
 ]
 
+def _match_province(province: str) -> str | None:
+    """省份名归一化匹配：兼容「北京」/「北京市」/「广西」/「广西壮族自治区」等写法。
+
+    :return: 规范全称（如「北京市」），未匹配返回 None
+    """
+    p = (province or "").strip()
+    if not p:
+        return None
+    # 去掉后缀后的核心名，双向比较
+    suffixes = ("壮族自治区", "回族自治区", "维吾尔自治区", "特别行政区", "自治区", "省", "市")
+
+    def core(name: str) -> str:
+        for s in suffixes:
+            if name.endswith(s):
+                return name[: -len(s)]
+        return name
+
+    target = core(p)
+    for _, full_name in _PROVINCES:
+        if p == full_name or target == core(full_name):
+            return full_name
+    return None
+
+
 # 地址生成用：省份 → 城市 → 区县 → 街道（内置样例数据，覆盖常用省份）
 _ADDRESS_DATA: dict[str, dict[str, list[str]]] = {
     "北京市": {"北京市": ["东城区", "西城区", "朝阳区", "海淀区", "丰台区", "通州区"]},
@@ -127,12 +151,13 @@ def generate_idcards(
     """生成身份证号（含省份/出生日期/性别/校验位）。"""
     if birth_year_start > birth_year_end:
         raise BizException(PARAM_INVALID, "出生年份范围起始不能大于结束")
-    # 省份过滤
+    # 省份过滤（归一化匹配，兼容「北京」/「北京市」写法）
     candidates = _PROVINCES
     if province:
-        candidates = [p for p in _PROVINCES if p[1] == province]
-        if not candidates:
+        canonical = _match_province(province)
+        if canonical is None:
             raise BizException(PARAM_INVALID, f"不支持的省份：{province}")
+        candidates = [p for p in _PROVINCES if p[1] == canonical]
 
     results = []
     for _ in range(count):
@@ -306,21 +331,22 @@ def generate_addresses(*, province: str | None, precision: str, count: int) -> l
     """生成随机地址（省市 / 省市区 / 省市区街道+门牌号）。"""
     provinces = list(_ADDRESS_DATA.keys())
     if province:
-        if province not in _ADDRESS_DATA:
+        # 归一化匹配（兼容「北京」/「北京市」写法）
+        canonical = _match_province(province)
+        if canonical is None:
+            raise BizException(PARAM_INVALID, f"不支持的省份：{province}")
+        if canonical not in _ADDRESS_DATA:
             # 未内置详情的省份：退化为「省份 + 随机市区」简版
-            matched = [p for _, p in _PROVINCES if p == province]
-            if not matched:
-                raise BizException(PARAM_INVALID, f"不支持的省份：{province}")
             results = []
             for _ in range(count):
-                base = province
+                base = canonical
                 if precision != "province_city":
                     base += "市辖区"
                 if precision == "full":
                     base += f"{random.choice(_STREETS)}{random.randint(1, 999)}号"
                 results.append(base)
             return results
-        provinces = [province]
+        provinces = [canonical]
 
     results = []
     for _ in range(count):

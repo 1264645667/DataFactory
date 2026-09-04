@@ -131,6 +131,7 @@
               v-model:value="form.valueTemplate"
               type="textarea"
               :rows="4"
+              :input-props="{ spellcheck: 'false' }"
               placeholder='留空按数据类型默认组装（json=全部字段 JSON 对象）；示例：{"name":"{name}","mobile":"{mobile}"}'
             />
             <template #feedback>

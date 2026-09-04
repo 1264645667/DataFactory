@@ -350,7 +350,7 @@
               />
             </n-form-item>
             <n-form-item label="value 模板（可选，覆盖默认组装）">
-              <n-input v-model:value="syncForm.valueTemplate" type="textarea" :rows="3" placeholder='留空按数据类型默认组装；支持 {"name":"{name}"} 占位符' />
+              <n-input v-model:value="syncForm.valueTemplate" type="textarea" :rows="3" :input-props="{ spellcheck: 'false' }" placeholder='留空按数据类型默认组装；支持 {"name":"{name}"} 占位符' />
             </n-form-item>
             <div class="tpl-actions">
               <n-button size="tiny" type="primary" secondary @click="parseSyncTemplate">解析 JSON 模板生成映射</n-button>

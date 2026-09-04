@@ -38,6 +38,7 @@
 import { computed } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { toolsApi } from '@/api/tools'
+import { copyItem } from '@/utils/formatter'
 import type { SnowflakeItem } from '@/api/types'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
@@ -54,6 +55,11 @@ const columns: DataTableColumns<SnowflakeItem> = [
   { title: '数据中心', key: 'datacenter_id', width: 80 },
   { title: '序列号', key: 'sequence', width: 70 },
 ]
+
+/** 点击行复制该条雪花 ID */
+function rowProps(row: SnowflakeItem): { style: string; title: string; onClick: () => void } {
+  return { style: 'cursor:pointer', title: '点击复制雪花 ID', onClick: () => copyItem(String(row.id)) }
+}
 
 const copyContent = computed(() => items.value.map((i) => i.id).join('\n'))
 const exportData = computed(() => ({

@@ -258,6 +258,11 @@ function handleExport(ext: 'csv' | 'txt'): void {
   font-size: 12px;
   color: #94a3b8;
 }
+.result-tip-inline {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #4b5563;
+}
 .result-btns {
   display: flex;
   gap: 6px;

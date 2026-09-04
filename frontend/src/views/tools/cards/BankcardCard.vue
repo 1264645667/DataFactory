@@ -32,7 +32,7 @@
     </template>
     <template #result>
       <div class="result-list">
-        <span v-for="(item, i) in items" :key="i" class="result-chip">{{ item.card_no }}</span>
+        <span v-for="(item, i) in items" :key="i" class="result-chip" title="点击复制" @click="copyItem(item.card_no)">{{ item.card_no }}</span>
       </div>
     </template>
   </ToolCardBase>
@@ -43,6 +43,7 @@ import { computed } from 'vue'
 import { toolsApi } from '@/api/tools'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
+import { copyItem } from '@/utils/formatter'
 
 const bankOptions = [
   { label: '随机', value: '' },

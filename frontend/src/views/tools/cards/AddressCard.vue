@@ -33,7 +33,7 @@
     </template>
     <template #result>
       <div class="result-list-col">
-        <div v-for="(item, i) in items" :key="i" class="result-line">{{ item }}</div>
+        <div v-for="(item, i) in items" :key="i" class="result-line" title="点击复制" @click="copyItem(item)">{{ item }}</div>
       </div>
     </template>
   </ToolCardBase>
@@ -44,6 +44,7 @@ import { computed } from 'vue'
 import { toolsApi } from '@/api/tools'
 import ToolCardBase from './ToolCardBase.vue'
 import { useApiTool } from './useApiTool'
+import { copyItem } from '@/utils/formatter'
 
 const PROVINCES = ['不限', '北京', '天津', '河北', '山西', '内蒙古', '辽宁', '吉林', '黑龙江', '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州', '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆']
 const provinceOptions = PROVINCES.map((p) => ({ label: p, value: p === '不限' ? '' : p }))
