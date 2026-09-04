@@ -45,6 +45,7 @@
             :data="config.redis_config.field_configs"
             size="small"
             :pagination="{ pageSize: 20 }"
+            :scroll-x="840"
             style="margin-top: 12px"
           />
         </div>
@@ -87,7 +88,7 @@
         <!-- 字段配置列表（只读，MySQL Case） -->
         <div v-if="!isRedisCase" class="gradient-border-card fields-card">
           <h4 class="section-title">字段配置（只读）</h4>
-          <n-data-table :columns="fieldColumns" :data="config.field_configs" size="small" :pagination="{ pageSize: 20 }" />
+          <n-data-table :columns="fieldColumns" :data="config.field_configs" size="small" :pagination="{ pageSize: 20 }" :scroll-x="840" />
         </div>
       </template>
     </n-spin>

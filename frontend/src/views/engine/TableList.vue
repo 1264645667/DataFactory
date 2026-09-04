@@ -59,6 +59,7 @@
           :data="pagedTables"
           :pagination="false"
           size="small"
+          :scroll-x="1130"
           :row-props="rowProps"
         />
         <EmptyState v-if="!loading && filteredTables.length === 0" description="暂无数据，小猫在打盹～" />
@@ -77,7 +78,7 @@
     <!-- 查看已有 Case 弹窗 -->
     <n-modal v-model:show="casesModalShow" preset="card" :title="`以 ${activeTable} 为主表的 Case`" style="width: 720px; max-width: 92vw">
       <n-spin :show="casesLoading">
-        <n-data-table :columns="caseColumns" :data="relatedCases" size="small" :pagination="{ pageSize: 8 }" />
+        <n-data-table :columns="caseColumns" :data="relatedCases" size="small" :pagination="{ pageSize: 8 }" :scroll-x="560" />
         <EmptyState v-if="!casesLoading && relatedCases.length === 0" description="该表还没有 Case，去配置一个吧" />
       </n-spin>
     </n-modal>

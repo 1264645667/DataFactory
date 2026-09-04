@@ -15,7 +15,7 @@
       <!-- 数据源表格 -->
       <n-skeleton v-if="firstLoading" :repeat="5" height="44px" />
       <n-spin v-else :show="loading">
-        <n-data-table :columns="columns" :data="filteredList" size="small" :pagination="{ pageSize: 20 }" />
+        <n-data-table :columns="columns" :data="filteredList" size="small" :pagination="{ pageSize: 20 }" :scroll-x="1250" />
         <EmptyState v-if="!loading && filteredList.length === 0" description="暂无数据源，先新增一个吧" />
       </n-spin>
     </div>

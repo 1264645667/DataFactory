@@ -70,7 +70,7 @@
         <n-button size="small" class="gradient-btn" @click="loadLogs(1)">查询</n-button>
       </div>
       <n-spin :show="logsLoading">
-        <n-data-table :columns="logColumns" :data="logs" size="small" :pagination="false" />
+        <n-data-table :columns="logColumns" :data="logs" size="small" :pagination="false" :scroll-x="810" />
         <EmptyState v-if="!logsLoading && logs.length === 0" />
         <div class="pager">
           <n-pagination v-model:page="logPage" :item-count="logTotal" :page-size="logPageSize" @update:page="loadLogs" />

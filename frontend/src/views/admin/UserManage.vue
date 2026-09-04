@@ -24,7 +24,7 @@
       <!-- 全部用户列表 -->
       <div v-show="activeTab === 'all'">
         <n-spin :show="usersLoading">
-          <n-data-table :columns="userColumns" :data="userList" size="small" :pagination="false" />
+          <n-data-table :columns="userColumns" :data="userList" size="small" :pagination="false" :scroll-x="990" />
           <div class="pager">
             <n-pagination v-model:page="userPage" :item-count="userTotal" :page-size="userPageSize" @update:page="loadUsers" />
           </div>

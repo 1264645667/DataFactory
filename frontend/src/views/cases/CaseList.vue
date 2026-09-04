@@ -69,7 +69,7 @@
           :columns="columns"
           :data="list"
           :pagination="false"
-          :scroll-x="1140"
+          :scroll-x="1200"
           size="small"
           :row-key="(row: CaseItem) => row.id"
           :checked-row-keys="selectedIds"
@@ -146,7 +146,7 @@
     <n-drawer v-model:show="historyShow" :width="680" placement="right">
       <n-drawer-content :title="`执行历史 · ${historyCaseName}`" closable>
         <n-spin :show="historyLoading">
-          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="{ pageSize: 10 }" />
+          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="{ pageSize: 10 }" :scroll-x="660" />
           <EmptyState v-if="!historyLoading && historyList.length === 0" description="还没有执行记录" />
           <div v-if="historyList.length > 0" class="history-stats">
             总执行 {{ historyList.length }} 次 · 成功 {{ historyList.filter((h) => h.status === 2).length }} 次 ·
@@ -351,7 +351,7 @@ const columns: DataTableColumns<CaseItem> = [
     width: 130,
     render: (r) => (r.last_exec_at ? formatDateTimeMin(r.last_exec_at) : h('span', { style: 'color:#64748b' }, '未执行')),
   },
-  { title: '最后执行状态', key: 'last_exec_status', width: 96, render: (r) => statusTag(r.last_exec_status) },
+  { title: '最后执行状态', key: 'last_exec_status', width: 110, render: (r) => statusTag(r.last_exec_status) },
   {
     title: '操作',
     key: 'actions',

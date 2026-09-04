@@ -402,7 +402,17 @@ function renderTop10(): void {
   if (!top10Data.value.length) return
   top10Chart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
+    // shadow 指针覆盖整个类目带（含 y 轴截断标签），tooltip 展示完整表名
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: unknown) => {
+        const p = (params as Array<{ dataIndex: number }>)[0]
+        const item = top10Data.value[p?.dataIndex ?? -1]
+        if (!item) return ''
+        return `${item.table_name} <span style="color:#94a3b8">@${item.datasource_name}</span><br/>造数条数：${formatNumber(item.row_count)}<br/>关联 Case：${item.case_count}`
+      },
+    },
     grid: { left: 140, right: 30, top: 20, bottom: 30 },
     xAxis: { type: 'value' },
     yAxis: {
@@ -715,6 +725,12 @@ onMounted(async () => {
 .charts-row {
   display: flex;
   gap: 16px;
+}
+/* 窄窗口：图表卡片纵向堆叠，避免互相挤压裁切 */
+@media (max-width: 1200px) {
+  .charts-row {
+    flex-direction: column;
+  }
 }
 .chart-card {
   padding: 16px;

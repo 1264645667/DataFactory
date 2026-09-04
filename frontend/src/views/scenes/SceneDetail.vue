@@ -45,7 +45,7 @@
         <!-- 最近 5 次执行记录 -->
         <div class="gradient-border-card history-card">
           <h4 class="section-title">最近执行记录</h4>
-          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="false" />
+          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="false" :scroll-x="680" />
           <EmptyState v-if="historyList.length === 0" description="还没有执行记录" :size="70" />
         </div>
       </template>

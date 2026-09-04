@@ -27,6 +27,7 @@
           :data="list"
           :pagination="false"
           size="small"
+          :scroll-x="1150"
           :row-key="(row: SceneItem) => row.id"
           :checked-row-keys="selectedIds"
           @update:checked-row-keys="(keys: number[]) => (selectedIds = keys)"
@@ -90,7 +91,7 @@
     <n-drawer v-model:show="historyShow" :width="720" placement="right">
       <n-drawer-content :title="`执行历史 · ${historySceneName}`" closable>
         <n-spin :show="historyLoading">
-          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="{ pageSize: 10 }" />
+          <n-data-table :columns="historyColumns" :data="historyList" size="small" :pagination="{ pageSize: 10 }" :scroll-x="820" />
           <EmptyState v-if="!historyLoading && historyList.length === 0" description="还没有执行记录" />
         </n-spin>
       </n-drawer-content>

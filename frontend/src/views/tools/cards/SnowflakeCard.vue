@@ -29,7 +29,7 @@
       </div>
     </template>
     <template #result>
-      <n-data-table :columns="columns" :data="items" size="small" :pagination="{ pageSize: 10 }" />
+      <n-data-table :columns="columns" :data="items" size="small" :pagination="{ pageSize: 10 }" :scroll-x="600" />
     </template>
   </ToolCardBase>
 </template>
